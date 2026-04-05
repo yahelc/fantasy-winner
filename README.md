@@ -4,6 +4,7 @@ Analytics tooling for ESPN fantasy baseball — Ferryhawk Tuah (league 105694981
 
 Pulls data from FanGraphs (via pybaseball) and Baseball Savant, scores players against
 your league's exact H2H point weights, and surfaces actionable roster decisions.
+Available as a **local web app** (primary) and a set of **CLI scripts**.
 
 ---
 
@@ -16,6 +17,75 @@ pip install -r requirements.txt
 ```
 
 Always use `.venv/bin/python` (or activate the venv first). Python 3.14.
+
+---
+
+## Web app
+
+The web app is the primary interface. It exposes all analysis views in a browser-accessible
+format with color-coded tables, sortable columns, and HTMX async loading.
+
+```bash
+.venv/bin/uvicorn web.app:app --host 0.0.0.0 --port 8000 --reload
+```
+
+Access at `http://localhost:8000`. Use `--host 0.0.0.0` to reach it from your phone or
+tablet on the same network.
+
+### Views
+
+**Lineup** (`/lineup`)
+Your next-week roster split into active and bench, scored by the model. Bench players
+who outscore a weaker active player at the same position are flagged "START?".
+Use `?week=current` to see the current ESPN lineup instead of the Tuesday projection.
+
+**Free Agents** (`/fa`)
+Top available free agents ranked by composite score. Filter by position with `?pos=SS`,
+`?pos=OF`, `?pos=SP`, etc.
+
+**Upgrades** (`/upgrade`)
+Two modes depending on whether you pass a position:
+- No position: table of "Drop X → Add Y" showing the delta in composite score for each
+  roster slot where a better FA exists.
+- With position (`?pos=OF`, `?pos=SP`, etc.): combined table of your players and top FAs
+  at that position, sorted by composite score. Your roster rows are highlighted in blue.
+
+**Week Projection** (`/week`)
+Projected fantasy points for next week: `pts/game × games your team plays`. Starters use
+rotation cadence (games÷5); relievers use historical appearances/week × team game share.
+
+**Schedule** (`/schedule`)
+Full schedule breakdown: your players' team game counts for next week, projected start
+dates for your starters, plus the same view for top available free agents.
+
+**Percentiles** (`/percentiles`)
+Baseball Savant percentile heatmap for your roster — xwOBA, xBA, xSLG, EV, Brl%, HH%,
+bat speed, K%, BB%, sprint speed for hitters; xERA, FBv, Whf%, K%, BB%, Brl% for pitchers.
+Toggle `?year=2025` or `?year=2026`. Cells colored red→yellow→green on 0–99 scale.
+
+**Compare** (`/compare`)
+Head-to-head comparison of any players. Pass comma-separated names as `?names=Judge,Stanton`.
+Partial name matching works. Add `?debug=1` for the full scoring model breakdown.
+
+**Simulate** (`/simulate`)
+"If I had Week X's lineup, how many points would it score in Week Y?"
+
+Uses the ESPN Tuesday roster projection for the lineup week. For scoring:
+- Players who were rostered anywhere in the league during the scoring week use ESPN actual
+  fantasy points (full-week matchup total, not just one day).
+- Players who were free agents use FanGraphs game stats for the scoring week date range
+  with your league's scoring weights applied directly. Quality starts, no-hitters, and
+  perfect games are not available from the date-range API and are excluded (pitcher totals
+  may be slightly understated as a result).
+
+### Cache and refresh
+
+Scored data (FanGraphs + scoring model) is cached to `cache/hitters.parquet` and
+`cache/pitchers.parquet` and reused across restarts. ESPN roster/FA data has a 5-minute
+in-memory cache.
+
+Add `?fresh=1` to any URL to bust the cache, re-fetch from FanGraphs and ESPN, and
+write new parquet files. Data age is shown in the navbar.
 
 ---
 
@@ -33,110 +103,105 @@ Sep 2025 = 0.72, Aug 2025 = 0.61 ... Apr 2025 = 0.32. PA-weighting means that
 **xwOBA, xSLG, Barrel%** come from season-level data (2026 if available, else 2025)
 and act as a quality tiebreaker — 20% weight in composite score.
 
+**composite_score** = 80% pts/game + 20% xwOBA z-score (hitters) or xFIP z-score (pitchers).
+
 ---
 
-## Scripts
+## CLI scripts
 
 ### `analyze.py` — main analysis CLI
 
-The primary tool. Connects to ESPN, fetches and scores all players, and runs reports.
-
 ```bash
 # Full report: your roster + top FAs + upgrade opportunities
-python analyze.py
+.venv/bin/python analyze.py
 
 # Just your roster scores
-python analyze.py --roster
+.venv/bin/python analyze.py --roster
 
 # Top free agents (all positions)
-python analyze.py --fa
+.venv/bin/python analyze.py --fa
 
 # Top free agents at a specific position
-python analyze.py --fa --pos SS
-python analyze.py --fa --pos OF
-python analyze.py --fa --pos SP
-python analyze.py --fa --pos RP
+.venv/bin/python analyze.py --fa --pos SS
+.venv/bin/python analyze.py --fa --pos SP
 
-# Upgrade opportunities — compares each roster slot to best available FA
-python analyze.py --upgrade
+# Upgrade opportunities
+.venv/bin/python analyze.py --upgrade
 
 # Head-to-head player comparison (partial name match works)
-python analyze.py --compare "Correa" "Bichette" "Wilson"
-python analyze.py --compare "Skenes" "Peralta"
+.venv/bin/python analyze.py --compare "Correa" "Bichette"
+.venv/bin/python analyze.py --compare "Skenes" "Peralta"
 
-# Control how many rows to show (default 25)
-python analyze.py --fa --pos OF --n 15
+# Control row count (default 25)
+.venv/bin/python analyze.py --fa --pos OF --n 15
 ```
 
 **Output columns:**
-- `Yr` — which season the data is tagged to (2026 = has current season data)
-- `PA` — season-level PA from FanGraphs (current season)
-- `xwOBA` — expected weighted on-base average (Statcast quality signal)
+- `Yr` — which season the data is from (2026 = has current season data)
+- `PA` / `IP` — current season volume
+- `xwOBA` / `xERA` — Statcast quality signal (tiebreaker)
 - `K%`, `BB%` — time-decayed rate stats
-- `pts_per_game` — projected fantasy points per game (direct scoring model output)
-- `composite_score` — 80% pts/G + 20% xwOBA z-score (final ranking metric)
-- `note` — flags "small sample" (<150 PA) or "2025 data" (no 2026 stats yet)
+- `pts_per_game` — projected fantasy points per game
+- `composite_score` — final ranking metric (80% pts/G + 20% quality)
+- `note` — "small sample" (<150 PA / <30 IP) or "2025 data"
 
 ---
 
-### `questions.py` — targeted one-off analyses
-
-Two specific analyses: Bichette replacement (2B/SS FAs ranked by 2026 bat speed)
-and Caballero vs Cruz (SB premium vs K penalty math).
+### `percentiles.py` — Baseball Savant percentile rankings (CLI)
 
 ```bash
-python questions.py
+.venv/bin/python percentiles.py                  # next-week roster, 2026
+.venv/bin/python percentiles.py --week current   # current ESPN lineup
+.venv/bin/python percentiles.py --year 2025      # historical season
 ```
 
-**What it shows:**
-1. Bichette replacement: all FA-eligible 2B/SS players sorted by 2026 bat speed,
-   merged with scoring model — find players with elite bat speed before the market catches on.
-2. Caballero vs Cruz: per-game point breakdown showing exactly how SB+2 and K−1
-   interact, with a per-component table and 162-game projection.
+Shows Savant percentile rankings for every player on your roster. All percentiles are
+on the 0–99 scale where 99 = best in MLB (inverted where necessary, e.g. low K% = 99).
 
 ---
 
 ### `monthly_decay.py` — inspect the time-decay model
 
-Run standalone to see the decay weights and per-player decayed rate stats.
-
 ```bash
-python monthly_decay.py
+.venv/bin/python monthly_decay.py
 ```
 
-**Output:**
-- Month weights table (shows the 0.85/month decay rate across the full timeline)
-- Top 25 players by total PA with their decayed K%, BB%, OBP, SLG, SB/G
-
-Useful for sanity-checking that a player's decay stats look right, or to see
-how many total plate appearances are feeding a player's profile.
+Prints the decay weight table and top 25 players by total PA with their decayed K%, BB%,
+OBP, SLG, SB/G. Useful for sanity-checking player profiles or verifying the model.
 
 ---
 
-### `fetch_data.py` — test data fetching
-
-Run to verify the data pipeline is working and preview what gets fetched.
+### `bat_speed.py` — 2026 bat speed leaderboard
 
 ```bash
-python fetch_data.py
+.venv/bin/python bat_speed.py
 ```
 
-Shows a sample of hitters and pitchers with their data source season and key stats.
-Useful after updating `config.py` or if you suspect stale cache issues.
+Shows top 25 players by bat speed (mph) with hard swing rate, whiff%, and swing count.
+Bat speed is always 2026-only — used as a leading indicator for players the market
+may not have priced in yet.
 
 ---
 
-### `bat_speed.py` — 2026 bat speed data
-
-Run to preview the Baseball Savant bat tracking leaderboard.
+### `fetch_data.py` — verify data pipeline
 
 ```bash
-python bat_speed.py
+.venv/bin/python fetch_data.py
 ```
 
-Shows top 25 players by bat speed with hard swing rate, whiff%, and swing count.
-Bat speed is always 2026-only (not blended) — it's used as a leading indicator
-of hitting quality for players the market may not have priced in yet.
+Fetches and previews hitter/pitcher data. Run this to confirm the pipeline works after
+changing `config.py` or if you suspect cache issues.
+
+---
+
+### `questions.py` — one-off analyses
+
+```bash
+.venv/bin/python questions.py
+```
+
+Targeted analyses that don't fit the general model (Bichette replacement rankings,
+Caballero vs Cruz SB/K math, etc.).
 
 ---
 
@@ -144,20 +209,26 @@ of hitting quality for players the market may not have priced in yet.
 
 | File | Purpose |
 |------|---------|
-| `config.py` | League ID, scoring weights, thresholds — edit this to change league settings |
+| `config.py` | League ID, scoring weights, team name, thresholds — edit to change league settings |
 | `fetch_data.py` | FanGraphs data fetching + unified time-decay application |
 | `monthly_decay.py` | PA-weighted exponential decay across 2025+2026 monthly splits |
-| `fetch_espn.py` | ESPN API connection — roster, free agents, league data |
-| `score_players.py` | Converts rate stats → projected pts/G and composite score |
+| `fetch_espn.py` | ESPN API: roster, free agents, historical roster state by date |
+| `fetch_schedule.py` | MLB Stats API: weekly game counts and projected start dates |
+| `score_players.py` | Rate stats → projected pts/G and composite score |
 | `bat_speed.py` | Baseball Savant bat speed leaderboard (2026-only) |
-| `analyze.py` | Main CLI — all the analysis modes |
+| `percentiles.py` | Savant percentile rankings; also imported by the web app |
+| `analyze.py` | Main CLI — all analysis modes |
 | `questions.py` | One-off targeted analyses |
+| `web/app.py` | FastAPI routes |
+| `web/reports.py` | Data-shaping layer — all views return DataFrames, no printing |
+| `web/render.py` | DataFrame → color-coded Bootstrap HTML table |
+| `web/data.py` | Two-level cache (in-memory TTL + parquet disk) |
 
 ---
 
 ## Adjusting the model
 
-**Change the off-season gap or decay rate** — edit `monthly_decay.py`:
+**Change decay rate or off-season gap** — edit `monthly_decay.py`:
 ```python
 OFF_SEASON_MONTHS = 2   # compressed months between Sep 2025 and Apr 2026
 DECAY = 0.85            # per-month decay factor
@@ -169,12 +240,15 @@ from fetch_data import get_hitters
 hitters = get_hitters(time_decay=False)
 ```
 
-**The 2026 month list updates automatically.** `monthly_decay.py` computes the active
-months at runtime based on today's date — no manual edits needed as the season progresses.
-On May 5th it will include Apr 2026 (full month) and May 2026 (through May 5th), and the
-weights will automatically re-anchor to May 2026 as step 0. New months appear as they start.
+**The 2026 month list updates automatically.** `monthly_decay.py` computes active months
+at runtime — no manual edits needed as the season progresses.
 
-**Clear stale cache:**
+**Clear parquet cache:**
+```bash
+rm cache/hitters.parquet cache/pitchers.parquet
+```
+
+**Clear pybaseball HTTP cache:**
 ```bash
 rm -rf $(python -c "import pybaseball; print(pybaseball.cache.get_cache_dir())")
 ```
@@ -183,11 +257,15 @@ rm -rf $(python -c "import pybaseball; print(pybaseball.cache.get_cache_dir())")
 
 ## Caveats
 
-- **Small 2026 samples**: Through early April, most players have 15–40 PA. The model
-  handles this via PA-weighting, but treat any player flagged "small sample" as noisy.
+- **Small 2026 samples**: Through early April, most players have 15–40 PA. Treat anyone
+  flagged "small sample" as noisy. The model handles this via PA-weighting, not filtering.
 - **Name matching**: ESPN and FanGraphs names don't always match exactly. If a player
-  shows "No data found," try a shorter partial name in `--compare`.
+  shows "No data found," try a shorter partial name.
+- **Recently traded players**: FanGraphs shows `"- - -"` as team. The web app falls back
+  to the ESPN `proTeam` attribute for schedule lookups.
 - **Defense is worthless**: This scoring system awards zero points for defensive metrics.
-  Sprint speed matters only insofar as it predicts stolen bases.
-- **Pitching**: The model doesn't apply time decay to pitchers (too few monthly IP splits
-  to be reliable). Pitcher scores use 2026 season-level stats with 2025 as supplement.
+  Sprint speed matters only as a stolen base predictor.
+- **Pitcher time decay**: Not applied to pitchers (too few monthly IP splits to be
+  reliable). Pitcher scores use 2026 season-level stats with 2025 as supplement.
+- **Simulate QS/NH/PG**: FanGraphs date-range stats don't include quality starts,
+  no-hitters, or perfect games. Pitcher totals in the simulator may be slightly low.
