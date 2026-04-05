@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %} — Free Agents{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+  <h4 class="mb-0">Free Agents</h4>
+
+  <div class="btn-group btn-group-sm flex-wrap" role="group">
+    <a href="/fa?pos=&n={{ n }}" class="btn {% if not pos %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
+    {% for p in ["C","1B","2B","3B","SS","OF","SP","RP"] %}
+    <a href="/fa?pos={{ p }}&n={{ n }}" class="btn {% if pos == p %}btn-primary{% else %}btn-outline-secondary{% endif %}">{{ p }}</a>
+    {% endfor %}
+  </div>
+
+  <div class="d-flex align-items-center gap-2">
+    <label class="form-label mb-0 small text-muted">Show:</label>
+    <select class="form-select form-select-sm" style="width:80px"
+            onchange="window.location='/fa?pos={{ pos }}&n='+this.value">
+      {% for opt in [15, 25, 50] %}
+      <option value="{{ opt }}" {% if n == opt %}selected{% endif %}>{{ opt }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <a href="/fa?pos={{ pos }}&n={{ n }}&fresh=1" class="btn btn-sm btn-outline-secondary">&#8635; Refresh</a>
+</div>
+
+<div hx-get="/fa/data?pos={{ pos }}&n={{ n }}" hx-trigger="load" hx-swap="outerHTML">
+  <div class="d-flex justify-content-center p-5">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+  </div>
+</div>
+{% endblock %}

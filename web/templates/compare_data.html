@@ -1,0 +1,25 @@
+<div>
+  {% if not_found %}
+  <div class="alert alert-warning">
+    Not found: {{ not_found | join(", ") }}
+  </div>
+  {% endif %}
+
+  {% if not h_html and not p_html %}
+    <p class="text-muted">No matching players found.</p>
+  {% else %}
+    {% if h_html %}
+    <div class="section-header">Hitters</div>
+    <div class="table-responsive mb-4">
+      {{ h_html | safe }}
+    </div>
+    {% endif %}
+
+    {% if p_html %}
+    <div class="section-header">Pitchers</div>
+    <div class="table-responsive mb-4">
+      {{ p_html | safe }}
+    </div>
+    {% endif %}
+  {% endif %}
+</div>

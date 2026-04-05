@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fantasy Winner{% block title %}{% endblock %}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <script src="https://unpkg.com/htmx.org@1.9.10"></script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+  <div class="container-fluid">
+    <a class="navbar-brand fw-bold" href="/">⚾ Fantasy</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div class="collapse navbar-collapse" id="nav">
+      <ul class="navbar-nav me-auto">
+        <li class="nav-item"><a class="nav-link" href="/lineup">Lineup</a></li>
+        <li class="nav-item"><a class="nav-link" href="/fa">Free Agents</a></li>
+        <li class="nav-item dropdown">
+          <a class="nav-link dropdown-toggle" href="/upgrade" data-bs-toggle="dropdown">Upgrades</a>
+          <ul class="dropdown-menu dropdown-menu-dark">
+            <li><a class="dropdown-item" href="/upgrade">All</a></li>
+            <li><hr class="dropdown-divider"></li>
+            {% for pos in ["C","1B","2B","3B","SS","OF","SP","RP","UTIL"] %}
+            <li><a class="dropdown-item" href="/upgrade?pos={{ pos }}">{{ pos }}</a></li>
+            {% endfor %}
+          </ul>
+        </li>
+        <li class="nav-item"><a class="nav-link" href="/week">Week</a></li>
+        <li class="nav-item"><a class="nav-link" href="/schedule">Schedule</a></li>
+        <li class="nav-item"><a class="nav-link" href="/percentiles">Percentiles</a></li>
+        <li class="nav-item"><a class="nav-link" href="/compare">Compare</a></li>
+        <li class="nav-item"><a class="nav-link" href="/simulate">Simulate</a></li>
+      </ul>
+      <span class="navbar-text text-muted small">
+        {% if cache_info.data_age %}Data: {{ cache_info.data_age }}{% endif %}
+      </span>
+    </div>
+  </div>
+</nav>
+<div class="container-fluid py-3">
+  {% block content %}{% endblock %}
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/static/tables.js"></script>
+</body>
+</html>

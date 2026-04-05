@@ -1,0 +1,18 @@
+<div>
+  <p class="text-muted small mb-3">
+    Year: <strong>{{ year }}</strong> &nbsp;|&nbsp;
+    Roster: <strong>{{ "Next week (Tuesday)" if week == "next" else "Current" }}</strong>
+  </p>
+
+  <div class="section-header">Hitter Percentiles</div>
+  <p class="text-muted small">Color: red = bottom of league, green = elite. Chase%/Whiff%/K%: lower raw stat = higher rank shown.</p>
+  <div class="table-responsive mb-4">
+    {{ hitters_html | safe }}
+  </div>
+
+  <div class="section-header">Pitcher Percentiles</div>
+  <p class="text-muted small">All columns inverted: 99 = best pitcher in MLB at that metric.</p>
+  <div class="table-responsive mb-4">
+    {{ pitchers_html | safe }}
+  </div>
+</div>

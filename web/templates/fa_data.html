@@ -1,0 +1,23 @@
+<div>
+  <p class="text-muted small mb-3">
+    Position filter: <strong>{{ position }}</strong>
+  </p>
+
+  {% if hitters_html %}
+  <div class="section-header">Free Agent Hitters</div>
+  <div class="table-responsive mb-4">
+    {{ hitters_html | safe }}
+  </div>
+  {% endif %}
+
+  {% if pitchers_html %}
+  <div class="section-header">Free Agent Pitchers</div>
+  <div class="table-responsive mb-4">
+    {{ pitchers_html | safe }}
+  </div>
+  {% endif %}
+
+  {% if not hitters_html and not pitchers_html %}
+  <p class="text-muted">No free agents found.</p>
+  {% endif %}
+</div>

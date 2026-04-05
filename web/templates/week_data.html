@@ -1,0 +1,21 @@
+<div>
+  <p class="text-muted small mb-3">
+    Week: <strong>{{ week_start }}</strong> – <strong>{{ week_end }}</strong>
+  </p>
+
+  <div class="section-header">Hitters — Projected Points</div>
+  <div class="table-responsive mb-4">
+    {{ hitters_html | safe }}
+  </div>
+
+  <div class="section-header">Pitchers — Projected Points</div>
+  <div class="table-responsive mb-4">
+    {{ pitchers_html | safe }}
+  </div>
+
+  <div class="alert alert-info d-inline-block mt-2">
+    <strong>Roster total:</strong>
+    {{ total_h }} (bat) + {{ total_p }} (pitch) =
+    <strong>{{ "%.1f"|format(total_h + total_p) }} pts</strong>
+  </div>
+</div>

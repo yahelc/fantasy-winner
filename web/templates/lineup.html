@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %} — Lineup{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-3">
+  <h4 class="mb-0">Lineup</h4>
+  <div class="btn-group btn-group-sm" role="group">
+    <a href="/lineup?week=next" class="btn {% if week == 'next' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Next Week</a>
+    <a href="/lineup?week=current" class="btn {% if week == 'current' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Current</a>
+  </div>
+  <a href="/lineup?week={{ week }}&fresh=1" class="btn btn-sm btn-outline-secondary">&#8635; Refresh</a>
+</div>
+
+<div hx-get="/lineup/data?week={{ week }}" hx-trigger="load" hx-swap="outerHTML">
+  <div class="d-flex justify-content-center p-5">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+  </div>
+</div>
+{% endblock %}

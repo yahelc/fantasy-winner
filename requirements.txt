@@ -1,0 +1,6 @@
+espn-api
+pybaseball
+pandas
+numpy
+tabulate
+requests

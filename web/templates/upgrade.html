@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %} — Upgrades{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+  <h4 class="mb-0">Upgrade Opportunities</h4>
+
+  <div class="btn-group btn-group-sm flex-wrap" role="group">
+    <a href="/upgrade" class="btn {% if not pos %}btn-primary{% else %}btn-outline-secondary{% endif %}">All</a>
+    {% for p in ["C","1B","2B","3B","SS","OF","SP","RP","UTIL"] %}
+    <a href="/upgrade?pos={{ p }}" class="btn {% if pos == p %}btn-primary{% else %}btn-outline-secondary{% endif %}">{{ p }}</a>
+    {% endfor %}
+  </div>
+
+  <a href="/upgrade?pos={{ pos }}&fresh=1" class="btn btn-sm btn-outline-secondary">&#8635; Refresh</a>
+</div>
+
+{% if pos %}
+<p class="text-muted small">Showing your players vs top FAs at <strong>{{ pos }}</strong></p>
+{% else %}
+<p class="text-muted small">Best upgrade available at each roster position (primary slots only).</p>
+{% endif %}
+
+<div hx-get="/upgrade/data?pos={{ pos }}" hx-trigger="load" hx-swap="outerHTML">
+  <div class="d-flex justify-content-center p-5">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+  </div>
+</div>
+{% endblock %}

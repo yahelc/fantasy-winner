@@ -1,0 +1,30 @@
+<div>
+  <div class="mb-2">
+    <span class="fw-bold">{{ team_name }}</span>
+    <span class="text-muted small ms-2">roster as of {{ roster_date }}</span>
+  </div>
+
+  <div class="section-header">Active Hitters</div>
+  <div class="table-responsive mb-4">
+    {{ h_active_html | safe }}
+  </div>
+
+  {% if h_bench_html and h_bench_html != "<p class='text-muted'>No data.</p>" %}
+  <div class="section-header">Bench Hitters</div>
+  <div class="table-responsive mb-4">
+    {{ h_bench_html | safe }}
+  </div>
+  {% endif %}
+
+  <div class="section-header">Active Pitchers</div>
+  <div class="table-responsive mb-4">
+    {{ p_active_html | safe }}
+  </div>
+
+  {% if p_bench_html and p_bench_html != "<p class='text-muted'>No data.</p>" %}
+  <div class="section-header">Bench Pitchers</div>
+  <div class="table-responsive mb-4">
+    {{ p_bench_html | safe }}
+  </div>
+  {% endif %}
+</div>

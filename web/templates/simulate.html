@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %} — Simulate{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-3">
+  <h4 class="mb-0">Lineup Simulator</h4>
+  <a href="/simulate?lineup_week={{ lineup_week }}&scoring_week={{ scoring_week }}&fresh=1"
+     class="btn btn-sm btn-outline-secondary">&#8635; Refresh</a>
+</div>
+<p class="text-muted small">
+  "If I had Week <em>X</em>'s lineup, how many points would it score in Week <em>Y</em>?"
+  Uses actual ESPN points from the scoring week.
+</p>
+
+<form id="sim-form" class="row g-2 align-items-end mb-4">
+  <div class="col-auto">
+    <label class="form-label small mb-1">Lineup from week</label>
+    <input type="number" class="form-control form-control-sm" name="lineup_week"
+           value="{{ lineup_week }}" min="1" max="{{ current_week + 5 }}" style="width:80px">
+  </div>
+  <div class="col-auto">
+    <label class="form-label small mb-1">Scored in week</label>
+    <input type="number" class="form-control form-control-sm" name="scoring_week"
+           value="{{ scoring_week }}" min="1" max="{{ current_week }}" style="width:80px">
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-sm btn-primary">Simulate</button>
+  </div>
+</form>
+
+<div id="sim-result"
+     hx-get="/simulate/data?lineup_week={{ lineup_week }}&scoring_week={{ scoring_week }}"
+     hx-trigger="load"
+     hx-swap="innerHTML">
+  <div class="d-flex justify-content-center p-5">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Loading…</span>
+    </div>
+  </div>
+</div>
+
+<script>
+document.getElementById("sim-form").addEventListener("submit", function(e) {
+  e.preventDefault();
+  const lw = this.querySelector("[name=lineup_week]").value;
+  const sw = this.querySelector("[name=scoring_week]").value;
+  const url = "/simulate/data?lineup_week=" + lw + "&scoring_week=" + sw;
+  const result = document.getElementById("sim-result");
+  result.innerHTML = `<div class="d-flex justify-content-center p-5">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Loading…</span>
+    </div>
+  </div>`;
+  htmx.ajax("GET", url, {target: "#sim-result", swap: "innerHTML"});
+  history.replaceState(null, "", "/simulate?lineup_week=" + lw + "&scoring_week=" + sw);
+});
+</script>
+{% endblock %}

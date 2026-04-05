@@ -1,0 +1,26 @@
+<div>
+  <p class="text-muted small mb-3">
+    Week: <strong>{{ week_start }}</strong> – <strong>{{ week_end }}</strong>
+  </p>
+
+  <div class="section-header">My Hitters — Games Next Week</div>
+  <div class="table-responsive mb-4">
+    {{ my_h_html | safe }}
+  </div>
+
+  <div class="section-header">My Pitchers — Projected Starts Next Week</div>
+  <p class="text-muted small">2x (?) = possible 2-start week, ~30% historical precision.</p>
+  <div class="table-responsive mb-4">
+    {{ my_p_html | safe }}
+  </div>
+
+  <div class="section-header">Top FA Hitters — By Games Next Week</div>
+  <div class="table-responsive mb-4">
+    {{ fa_h_html | safe }}
+  </div>
+
+  <div class="section-header">Top FA Starters — 2-Start Candidates First</div>
+  <div class="table-responsive mb-4">
+    {{ fa_p_html | safe }}
+  </div>
+</div>

@@ -1,0 +1,24 @@
+<div>
+  <p class="text-muted small mb-1">
+    Roster as of <strong>{{ lineup_date }}</strong> (Week {{ lineup_week }})
+    scored in <strong>Week {{ scoring_week }}</strong>
+    (<strong>{{ week_start }}</strong> – <strong>{{ week_end }}</strong>).
+    Rostered players use ESPN actual pts; free agents use FanGraphs stats (QS/NH/PG excluded).
+  </p>
+  {% if not_found %}
+  <p class="text-muted small mb-2">
+    <strong>No stats found (showing 0):</strong> {{ not_found | join(", ") }}
+    — likely injured/IL with no games played in Week {{ scoring_week }}.
+  </p>
+  {% endif %}
+
+  <div class="table-responsive mb-3">
+    {{ rows_html | safe }}
+  </div>
+
+  <div class="alert alert-info d-inline-block">
+    <strong>Active-slot total:</strong> {{ total_active }} pts
+    &nbsp;|&nbsp;
+    <strong>Full roster total:</strong> {{ total_all }} pts
+  </div>
+</div>

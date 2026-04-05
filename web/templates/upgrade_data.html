@@ -1,0 +1,18 @@
+<div>
+  {% if mode == "pos" %}
+    <div class="section-header">{{ position }} — My Players vs Free Agents</div>
+    <div class="table-responsive mb-4">
+      {{ combined_html | safe }}
+    </div>
+  {% else %}
+    {% if upgrades_html == "<p class='text-muted'>No data.</p>" %}
+      <div class="alert alert-success">No upgrades found — you're locked in!</div>
+    {% else %}
+      <div class="section-header">Upgrade Opportunities</div>
+      <p class="text-muted small">Sorted by delta (improvement). Matched on primary position slots only.</p>
+      <div class="table-responsive mb-4">
+        {{ upgrades_html | safe }}
+      </div>
+    {% endif %}
+  {% endif %}
+</div>

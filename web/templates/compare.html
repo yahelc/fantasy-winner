@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %} — Compare{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-3">
+  <h4 class="mb-0">Compare Players</h4>
+  <a href="/compare?fresh=1" class="btn btn-sm btn-outline-secondary">&#8635; Refresh Data</a>
+</div>
+
+<form class="row g-2 align-items-end mb-4"
+      hx-get="/compare/data"
+      hx-target="#compare-result"
+      hx-swap="innerHTML"
+      hx-indicator="#compare-spinner">
+  <div class="col-auto">
+    <label class="form-label small text-muted">Player names (comma-separated)</label>
+    <input type="text" name="names" value="{{ names }}"
+           class="form-control" style="width: 420px"
+           placeholder="e.g. Shohei Ohtani, Juan Soto, Tarik Skubal">
+  </div>
+  <div class="col-auto">
+    <div class="form-check mb-2">
+      <input class="form-check-input" type="checkbox" name="debug" value="1" id="debugCheck"
+             {% if debug %}checked{% endif %}>
+      <label class="form-check-label small" for="debugCheck">Debug (show scoring components)</label>
+    </div>
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-primary">Compare</button>
+    <span id="compare-spinner" class="htmx-indicator ms-2">
+      <span class="spinner-border spinner-border-sm text-secondary" role="status"></span>
+    </span>
+  </div>
+</form>
+
+<div id="compare-result">
+  {% if names %}
+  <div class="d-flex justify-content-center p-4">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+  </div>
+  <script>
+    // Auto-trigger on page load if names are pre-filled
+    document.querySelector('form').dispatchEvent(new Event('submit'));
+  </script>
+  {% else %}
+  <p class="text-muted">Enter player names above to compare.</p>
+  {% endif %}
+</div>
+
+<style>
+.htmx-indicator { display: none; }
+.htmx-request .htmx-indicator { display: inline; }
+</style>
+{% endblock %}

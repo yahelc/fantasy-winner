@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %} — Percentiles{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+  <h4 class="mb-0">Savant Percentiles</h4>
+
+  <div class="btn-group btn-group-sm" role="group">
+    <a href="/percentiles?year={{ year }}&week=next" class="btn {% if week == 'next' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Next Week</a>
+    <a href="/percentiles?year={{ year }}&week=current" class="btn {% if week == 'current' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Current</a>
+  </div>
+
+  <div class="d-flex align-items-center gap-2">
+    <label class="form-label mb-0 small text-muted">Year:</label>
+    <select class="form-select form-select-sm" style="width:90px"
+            onchange="window.location='/percentiles?year='+this.value+'&week={{ week }}'">
+      {% for y in [2026, 2025, 2024] %}
+      <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <a href="/percentiles?year={{ year }}&week={{ week }}&fresh=1" class="btn btn-sm btn-outline-secondary">&#8635; Refresh</a>
+</div>
+<p class="text-muted small">
+  Savant percentile rankings (99 = best in MLB).
+  Chase%/Whiff%/K% for hitters: lower raw stat = higher percentile.
+  For pitchers: all columns are inverted so 99 = best.
+</p>
+
+<div hx-get="/percentiles/data?year={{ year }}&week={{ week }}" hx-trigger="load" hx-swap="outerHTML">
+  <div class="d-flex justify-content-center p-5">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Loading...</span>
+    </div>
+  </div>
+</div>
+{% endblock %}
