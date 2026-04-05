@@ -4,3 +4,7 @@ pandas
 numpy
 tabulate
 requests
+fastapi[standard]
+uvicorn[standard]
+jinja2
+pyarrow
