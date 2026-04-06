@@ -686,6 +686,11 @@ def _collect_actual_points(league, scoring_week: int) -> tuple[dict[str, float],
                 name = player.get("fullName")
                 if not name or name in pts:
                     continue
+                # IL/IL+ slot IDs — ESPN returns projected stats for these
+                # players even in completed weeks, so force to 0.
+                if entry.get("lineupSlotId") in (16, 17):
+                    pts[name] = 0.0
+                    continue
                 stats_list = player.get("stats", [])
                 week_pts = next(
                     (s.get("appliedTotal", 0.0)
