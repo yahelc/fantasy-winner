@@ -669,7 +669,7 @@ def _collect_actual_points(league, scoring_week: int) -> tuple[dict[str, float],
 
     # Derive week date range from pointsByScoringPeriod
     today = date.today()
-    current_sp = league.current_week
+    current_sp = league.scoringPeriodId
     all_sps: set[int] = set()
     pts: dict[str, float] = {}
 
