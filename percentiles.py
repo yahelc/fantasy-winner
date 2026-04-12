@@ -89,8 +89,11 @@ def _build_table(roster_names: list[str], savant_df: pd.DataFrame,
     # Build accent-normalized index for matching
     savant_df = savant_df.copy()
     savant_df["Name_norm"] = savant_df["Name"].apply(_strip_accents)
+    # Deduplicate by name so .loc always returns a Series, not a DataFrame
+    savant_df = savant_df.drop_duplicates(subset=["Name"])
+    savant_norm_df = savant_df.drop_duplicates(subset=["Name_norm"])
     savant_idx = savant_df.set_index("Name")
-    savant_norm_idx = savant_df.set_index("Name_norm")
+    savant_norm_idx = savant_norm_df.set_index("Name_norm")
 
     rows = []
     for name in roster_names:
