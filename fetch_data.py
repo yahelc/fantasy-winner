@@ -70,6 +70,7 @@ def _build_base(raw: dict, season: int) -> pd.DataFrame:
     """
     Build base frame without decay: 2026 players first,
     supplement with 2025-only players.
+    Returns empty DataFrame if neither season is available.
     """
     if season in raw and (season - 1) in raw:
         cur = raw[season].copy()
@@ -78,8 +79,10 @@ def _build_base(raw: dict, season: int) -> pd.DataFrame:
         df = pd.concat([cur, prior_only], ignore_index=True)
     elif season in raw:
         df = raw[season].copy()
-    else:
+    elif (season - 1) in raw:
         df = raw[season - 1].copy()
+    else:
+        return pd.DataFrame()
 
     return df.sort_values("PA", ascending=False).drop_duplicates(subset=["Name"]).reset_index(drop=True)
 
@@ -128,6 +131,22 @@ def _apply_unified_decay(raw: dict, decayed: pd.DataFrame, season: int) -> pd.Da
     early-season samples from distorting the quality tiebreaker.
     """
     base = _build_base(raw, season)
+
+    # If season-level API was unavailable (e.g. 403), fall back to decayed data as base.
+    # We lose Team, xwOBA, HR etc., but scoring rate stats are intact.
+    if base.empty:
+        print("  WARNING: season-level data unavailable; using monthly splits as base.")
+        base = decayed.rename(columns={"PA_total": "PA", "G_total": "G"}).copy()
+        for col, decay_col in {
+            "K%": "K%_decay", "BB%": "BB%_decay",
+            "OBP": "OBP_decay", "SLG": "SLG_decay",
+        }.items():
+            if decay_col in base.columns:
+                base[col] = base[decay_col]
+        if "SB/G_decay" in base.columns:
+            base["SB_per_g_blend"] = base["SB/G_decay"]
+        drop = [c for c in base.columns if c.endswith("_decay")]
+        return base.drop(columns=drop, errors="ignore").reset_index(drop=True)
 
     # PA-blend Statcast quality metrics for players in both seasons
     if season in raw and (season - 1) in raw:
