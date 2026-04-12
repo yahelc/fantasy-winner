@@ -11,12 +11,125 @@ xwOBA, xSLG, Barrel%, EV, etc. stay at season level (2026 if available,
 else 2025) since monthly xwOBA is noisier and those are only tiebreakers.
 """
 
+import io
+import unicodedata
+import requests
 import pandas as pd
 import pybaseball
 from pybaseball import batting_stats, pitching_stats
 from config import SEASON, MIN_PA, MIN_IP
 
 pybaseball.cache.enable()
+
+_MLB_STATS_URL   = "https://statsapi.mlb.com/api/v1/stats"
+_SAVANT_EXPECTED = "https://baseballsavant.mlb.com/leaderboard/expected_statistics"
+_SAVANT_HEADERS  = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"}
+
+
+def _strip_accents(s: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+
+
+def _fetch_mlb_batting_season(season: int, min_pa: int = 1) -> pd.DataFrame:
+    """Season batting stats from MLB Stats API."""
+    r = requests.get(_MLB_STATS_URL, params={
+        "stats": "season", "group": "hitting", "season": season,
+        "playerPool": "all", "limit": 2000,
+    }, timeout=20)
+    r.raise_for_status()
+    splits = r.json().get("stats", [{}])[0].get("splits", [])
+    rows = []
+    for s in splits:
+        stat = s.get("stat", {})
+        pa = int(stat.get("plateAppearances", 0) or 0)
+        if pa < min_pa:
+            continue
+        k  = int(stat.get("strikeOuts", 0) or 0)
+        bb = int(stat.get("baseOnBalls", 0) or 0)
+        rows.append({
+            "Name": s.get("player", {}).get("fullName", ""),
+            "Team": s.get("team", {}).get("abbreviation", ""),
+            "G":    int(stat.get("gamesPlayed", 0) or 0),
+            "PA":   pa,
+            "AB":   int(stat.get("atBats", 0) or 0),
+            "H":    int(stat.get("hits", 0) or 0),
+            "HR":   int(stat.get("homeRuns", 0) or 0),
+            "R":    int(stat.get("runs", 0) or 0),
+            "RBI":  int(stat.get("rbi", 0) or 0),
+            "SB":   int(stat.get("stolenBases", 0) or 0),
+            "BB":   bb,
+            "K":    k,
+            "K%":   k / pa if pa > 0 else float("nan"),
+            "BB%":  bb / pa if pa > 0 else float("nan"),
+            "OBP":  float(stat.get("obp", 0) or 0),
+            "SLG":  float(stat.get("slg", 0) or 0),
+            "TB":   int(stat.get("totalBases", 0) or 0),
+            "data_season": season,
+        })
+    return pd.DataFrame(rows)
+
+
+def _fetch_savant_expected_batters(year: int) -> pd.DataFrame:
+    """xwOBA, xSLG, xBA from Baseball Savant."""
+    r = requests.get(_SAVANT_EXPECTED, params={
+        "type": "batter", "year": year, "position": "", "team": "", "min": 1, "csv": "true",
+    }, headers=_SAVANT_HEADERS, timeout=15)
+    r.raise_for_status()
+    df = pd.read_csv(io.StringIO(r.text))
+    df["Name"] = df["last_name, first_name"].apply(
+        lambda x: " ".join(reversed([n.strip() for n in str(x).split(",")])) if pd.notna(x) else ""
+    )
+    return df.rename(columns={"est_woba": "xwOBA", "est_slg": "xSLG", "est_ba": "xBA"}
+                     )[["Name", "xwOBA", "xSLG", "xBA"]].dropna(subset=["Name"])
+
+
+def _fetch_mlb_pitching_season(season: int, min_ip: float = 1.0) -> pd.DataFrame:
+    """Season pitching stats from MLB Stats API."""
+    r = requests.get(_MLB_STATS_URL, params={
+        "stats": "season", "group": "pitching", "season": season,
+        "playerPool": "all", "limit": 2000,
+    }, timeout=20)
+    r.raise_for_status()
+    splits = r.json().get("stats", [{}])[0].get("splits", [])
+    rows = []
+    for s in splits:
+        stat = s.get("stat", {})
+        ip = float(stat.get("inningsPitched", 0) or 0)
+        if ip < min_ip:
+            continue
+        bf = int(stat.get("battersFaced", 0) or 0)
+        k  = int(stat.get("strikeOuts", 0) or 0)
+        bb = int(stat.get("baseOnBalls", 0) or 0)
+        rows.append({
+            "Name": s.get("player", {}).get("fullName", ""),
+            "Team": s.get("team", {}).get("abbreviation", ""),
+            "G":    int(stat.get("gamesPlayed", 0) or 0),
+            "GS":   int(stat.get("gamesStarted", 0) or 0),
+            "IP":   ip,
+            "K":    k,
+            "BB":   bb,
+            "H":    int(stat.get("hits", 0) or 0),
+            "ER":   int(stat.get("earnedRuns", 0) or 0),
+            "SV":   int(stat.get("saves", 0) or 0),
+            "K%":   k / bf if bf > 0 else float("nan"),
+            "BB%":  bb / bf if bf > 0 else float("nan"),
+            "ERA":  float(stat.get("era", 4.00) or 4.00),
+            "data_season": season,
+        })
+    return pd.DataFrame(rows)
+
+
+def _fetch_savant_expected_pitchers(year: int) -> pd.DataFrame:
+    """xERA from Baseball Savant."""
+    r = requests.get(_SAVANT_EXPECTED, params={
+        "type": "pitcher", "year": year, "position": "", "team": "", "min": 1, "csv": "true",
+    }, headers=_SAVANT_HEADERS, timeout=15)
+    r.raise_for_status()
+    df = pd.read_csv(io.StringIO(r.text))
+    df["Name"] = df["last_name, first_name"].apply(
+        lambda x: " ".join(reversed([n.strip() for n in str(x).split(",")])) if pd.notna(x) else ""
+    )
+    return df.rename(columns={"xera": "xERA"})[["Name", "xERA"]].dropna(subset=["Name"])
 
 # Statcast quality metrics to PA-blend between seasons (early 2026 samples are noisy)
 HITTER_BLEND_COLS  = ["xwOBA", "xSLG", "xBA", "xOBP", "EV", "Barrel%", "HardHit%"]
@@ -55,12 +168,44 @@ def get_hitters(season: int = SEASON, min_pa: int = MIN_PA,
     except Exception as e:
         print(f"  {season-1} unavailable: {e}")
 
+    # Fall back to MLB Stats API + Baseball Savant when FanGraphs is unavailable
+    if season not in raw:
+        try:
+            df26 = _fetch_mlb_batting_season(season, min_pa=min_pa)
+            df26["data_season"] = season
+            raw[season] = df26
+            print(f"  {season} (MLB API): {len(df26)} hitters")
+        except Exception as e:
+            print(f"  {season} MLB API unavailable: {e}")
+
+    if (season - 1) not in raw:
+        try:
+            df25 = _fetch_mlb_batting_season(season - 1, min_pa=100)
+            df25["data_season"] = season - 1
+            raw[season - 1] = df25
+            print(f"  {season-1} (MLB API): {len(df25)} hitters")
+        except Exception as e:
+            print(f"  {season-1} MLB API unavailable: {e}")
+
     if time_decay:
         from monthly_decay import get_unified_decayed
         decayed = get_unified_decayed()
         df = _apply_unified_decay(raw, decayed, season)
     else:
         df = _build_base(raw, season)
+
+    # Merge Savant expected stats (xwOBA, xSLG, xBA) if not already present
+    if "xwOBA" not in df.columns or df["xwOBA"].isna().all():
+        for yr in (season, season - 1):
+            try:
+                savant = _fetch_savant_expected_batters(yr)
+                # Savant names are "First Last"; strip accents to match
+                savant["Name"] = savant["Name"].apply(_strip_accents)
+                df = df.merge(savant, on="Name", how="left", suffixes=("", f"_sav{yr}"))
+                print(f"  Savant expected stats merged ({yr}): {savant['xwOBA'].notna().sum()} players")
+                break
+            except Exception as e:
+                print(f"  Savant {yr} unavailable: {e}")
 
     print(f"  Total: {len(df)} hitters")
     return df
@@ -305,42 +450,48 @@ def get_pitchers(season: int = SEASON, min_ip: int = MIN_IP) -> pd.DataFrame:
     elif prior is not None:
         df = _normalize_pitcher_cols(prior)
     else:
-        # Legacy endpoint unavailable — fall back to pitching_stats_range
-        print("  WARNING: season-level pitcher data unavailable; falling back to range API (no xFIP/xERA).")
-        from datetime import date
-        opening_day_2026 = "2026-03-27"
-        today = date.today().strftime("%Y-%m-%d")
+        # Legacy endpoint unavailable — fall back to MLB Stats API
+        print("  WARNING: season-level pitcher data unavailable; falling back to MLB Stats API.")
+        cur_r, pri_r = None, None
         try:
-            cur_r = _fetch_pitching_range(opening_day_2026, today, min_ip=min_ip)
+            cur_r = _fetch_mlb_pitching_season(season, min_ip=min_ip)
             cur_r["data_season"] = season
-            print(f"  {season} (range): {len(cur_r)} pitchers")
+            print(f"  {season} (MLB API): {len(cur_r)} pitchers")
         except Exception as e:
-            print(f"  {season} range unavailable: {e}")
-            cur_r = None
+            print(f"  {season} MLB API unavailable: {e}")
         try:
-            pri_r = _fetch_pitching_range("2025-03-27", "2025-09-28", min_ip=30)
+            pri_r = _fetch_mlb_pitching_season(season - 1, min_ip=30)
             pri_r["data_season"] = season - 1
-            print(f"  {season-1} (range): {len(pri_r)} pitchers")
+            print(f"  {season-1} (MLB API): {len(pri_r)} pitchers")
         except Exception as e:
-            print(f"  {season-1} range unavailable: {e}")
-            pri_r = None
+            print(f"  {season-1} MLB API unavailable: {e}")
 
         if cur_r is not None and pri_r is not None:
-            cur_r  = _normalize_pitcher_cols(cur_r)
-            pri_r  = _normalize_pitcher_cols(pri_r)
-            cur_r  = _blend_ip_per_gs(cur_r, pri_r)
-            cur_r  = _add_pitcher_g_total(cur_r, pri_r, season)
+            cur_r = _blend_ip_per_gs(cur_r, pri_r)
+            cur_r = _add_pitcher_g_total(cur_r, pri_r, season)
             cur_names = set(cur_r["Name"])
             pri_supp  = pri_r[~pri_r["Name"].isin(cur_names)].copy()
             pri_supp["G_total"] = pri_supp["G"]
             pri_supp["weeks_sampled"] = _SEASON_2025_WEEKS
             df = pd.concat([cur_r, pri_supp], ignore_index=True)
         elif cur_r is not None:
-            df = _normalize_pitcher_cols(cur_r)
+            df = cur_r
         elif pri_r is not None:
-            df = _normalize_pitcher_cols(pri_r)
+            df = pri_r
         else:
             raise RuntimeError("Could not fetch pitcher data for any season via any method")
+
+    # Merge Savant xERA if not already present
+    if "xERA" not in df.columns or df["xERA"].isna().all():
+        for yr in (season, season - 1):
+            try:
+                savant_p = _fetch_savant_expected_pitchers(yr)
+                savant_p["Name"] = savant_p["Name"].apply(_strip_accents)
+                df = df.merge(savant_p, on="Name", how="left", suffixes=("", f"_sav{yr}"))
+                print(f"  Savant pitcher xERA merged ({yr}): {savant_p['xERA'].notna().sum()} pitchers")
+                break
+            except Exception as e:
+                print(f"  Savant pitcher {yr} unavailable: {e}")
 
     print(f"  Total: {len(df)} pitchers")
     return df

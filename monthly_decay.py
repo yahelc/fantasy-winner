@@ -1,7 +1,7 @@
 """
 Unified time-decay model for batting rate stats.
 
-Pulls monthly data from FanGraphs across 2025 + 2026, applies
+Pulls monthly data from MLB Stats API across 2025 + 2026, applies
 exponential time decay from the most recent month backward. A
 compressed off-season gap (OFF_SEASON_MONTHS = 2) sits between
 Sep 2025 and Apr 2026 — shorter than the literal 6-month break
@@ -19,10 +19,11 @@ xwOBA is left to the season-level data (it's only a tiebreaker).
 
 import unicodedata
 from datetime import date
+import requests
 import pandas as pd
 import numpy as np
-import pybaseball
-from pybaseball import batting_stats_range
+
+MLB_STATS_URL = "https://statsapi.mlb.com/api/v1/stats"
 
 
 def _strip_accents(s: str) -> str:
@@ -32,8 +33,6 @@ def _strip_accents(s: str) -> str:
         if unicodedata.category(c) != "Mn"
     )
 
-
-pybaseball.cache.enable()
 
 # 2025 is a complete season — fixed date ranges.
 _MONTHS_2025 = [
@@ -105,28 +104,65 @@ MONTHS = _build_months()
 MONTH_WEIGHTS = _build_weights(MONTHS, OFF_SEASON_MONTHS, DECAY)
 
 
+def _fetch_mlb_batting_month(label: str, start: str, end: str) -> pd.DataFrame:
+    """
+    Fetch batting stats from MLB Stats API for a date range.
+    Returns one row per player with rate stats computed from counting stats.
+    """
+    season = int(label.split()[-1])
+    params = {
+        "stats": "byDateRange",
+        "group": "hitting",
+        "season": season,
+        "startDate": start,
+        "endDate": end,
+        "playerPool": "all",
+        "limit": 2000,
+    }
+    r = requests.get(MLB_STATS_URL, params=params, timeout=20)
+    r.raise_for_status()
+    splits = r.json().get("stats", [{}])[0].get("splits", [])
+
+    rows = []
+    for s in splits:
+        stat = s.get("stat", {})
+        pa = int(stat.get("plateAppearances", 0) or 0)
+        g  = int(stat.get("gamesPlayed", 0) or 0)
+        if pa == 0:
+            continue
+        k  = int(stat.get("strikeOuts", 0) or 0)
+        bb = int(stat.get("baseOnBalls", 0) or 0)
+        sb = int(stat.get("stolenBases", 0) or 0)
+        rows.append({
+            "Name": _strip_accents(s.get("player", {}).get("fullName", "")),
+            "PA":   pa,
+            "G":    g,
+            "AB":   int(stat.get("atBats", 0) or 0),
+            "K%":   k / pa,
+            "BB%":  bb / pa,
+            "SB/G": sb / g if g > 0 else float("nan"),
+            "OBP":  float(stat.get("obp", 0) or 0),
+            "SLG":  float(stat.get("slg", 0) or 0),
+        })
+
+    return pd.DataFrame(rows)
+
+
 def fetch_all_monthly_splits(min_pa_per_month: int = 10) -> pd.DataFrame:
     """
-    Fetch one FanGraphs range chunk per month across 2025+2026,
-    compute rate stats, and return a long-format df with one row
-    per (player, month).
+    Fetch one MLB Stats API chunk per month across 2025+2026,
+    and return a long-format df with one row per (player, month).
     """
     frames = []
     for label, start, end in MONTHS:
         print(f"  Fetching {label} ({start} -> {end})...")
         try:
-            df = batting_stats_range(start, end)
+            df = _fetch_mlb_batting_month(label, start, end)
         except Exception as e:
             print(f"    Failed: {e}")
             continue
 
         df = df[df["PA"] >= min_pa_per_month].copy()
-        df["Name"] = df["Name"].apply(_strip_accents)
-
-        df["K%"]   = df["SO"] / df["PA"]
-        df["BB%"]  = df["BB"] / df["PA"]
-        df["SB/G"] = df["SB"] / df["G"].replace(0, np.nan)
-
         df["month"]        = label
         df["month_weight"] = MONTH_WEIGHTS[label]
 
