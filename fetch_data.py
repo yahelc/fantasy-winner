@@ -201,6 +201,7 @@ def get_hitters(season: int = SEASON, min_pa: int = MIN_PA,
                 savant = _fetch_savant_expected_batters(yr)
                 # Savant names are "First Last"; strip accents to match
                 savant["Name"] = savant["Name"].apply(_strip_accents)
+                savant = savant.drop_duplicates(subset=["Name"])
                 df = df.merge(savant, on="Name", how="left", suffixes=("", f"_sav{yr}"))
                 print(f"  Savant expected stats merged ({yr}): {savant['xwOBA'].notna().sum()} players")
                 break
