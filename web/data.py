@@ -7,6 +7,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pandas as pd
+import pybaseball
 from fetch_data import get_hitters, get_pitchers
 from fetch_espn import get_league as _get_league
 from score_players import score_hitters, score_pitchers
@@ -24,6 +25,7 @@ def invalidate():
     _mem.clear()
     for f in (HITTERS_CACHE, PITCHERS_CACHE):
         f.unlink(missing_ok=True)
+    pybaseball.cache.purge()
 
 
 def get_cache_info() -> dict:
