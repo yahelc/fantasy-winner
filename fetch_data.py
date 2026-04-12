@@ -246,9 +246,26 @@ def _blend_ip_per_gs(current: pd.DataFrame, prior: pd.DataFrame) -> pd.DataFrame
     return current
 
 
+def _fetch_pitching_range(start: str, end: str, min_ip: float = 0) -> pd.DataFrame:
+    """
+    Fetch pitching stats via batting_stats_range-equivalent for pitchers.
+    Computes K% and BB% from counting stats (xFIP/xERA unavailable here).
+    """
+    from pybaseball import pitching_stats_range
+    df = pitching_stats_range(start, end)
+    df = df.rename(columns={"Tm": "Team", "SO": "K_raw", "BF": "BF"})
+    if "BF" in df.columns:
+        df["K%"] = df["K_raw"] / df["BF"].replace(0, float("nan"))
+        df["BB%"] = df["BB"] / df["BF"].replace(0, float("nan"))
+    if min_ip:
+        df = df[df["IP"] >= min_ip]
+    return df.reset_index(drop=True)
+
+
 def get_pitchers(season: int = SEASON, min_ip: int = MIN_IP) -> pd.DataFrame:
     """
     Pull FanGraphs pitching stats. Tries current season first, falls back to prior.
+    If the legacy season endpoint returns 403, falls back to pitching_stats_range.
     """
     print(f"Fetching pitcher data for {season}...")
 
@@ -288,7 +305,42 @@ def get_pitchers(season: int = SEASON, min_ip: int = MIN_IP) -> pd.DataFrame:
     elif prior is not None:
         df = _normalize_pitcher_cols(prior)
     else:
-        raise RuntimeError("Could not fetch pitcher data for any season")
+        # Legacy endpoint unavailable — fall back to pitching_stats_range
+        print("  WARNING: season-level pitcher data unavailable; falling back to range API (no xFIP/xERA).")
+        from datetime import date
+        opening_day_2026 = "2026-03-27"
+        today = date.today().strftime("%Y-%m-%d")
+        try:
+            cur_r = _fetch_pitching_range(opening_day_2026, today, min_ip=min_ip)
+            cur_r["data_season"] = season
+            print(f"  {season} (range): {len(cur_r)} pitchers")
+        except Exception as e:
+            print(f"  {season} range unavailable: {e}")
+            cur_r = None
+        try:
+            pri_r = _fetch_pitching_range("2025-03-27", "2025-09-28", min_ip=30)
+            pri_r["data_season"] = season - 1
+            print(f"  {season-1} (range): {len(pri_r)} pitchers")
+        except Exception as e:
+            print(f"  {season-1} range unavailable: {e}")
+            pri_r = None
+
+        if cur_r is not None and pri_r is not None:
+            cur_r  = _normalize_pitcher_cols(cur_r)
+            pri_r  = _normalize_pitcher_cols(pri_r)
+            cur_r  = _blend_ip_per_gs(cur_r, pri_r)
+            cur_r  = _add_pitcher_g_total(cur_r, pri_r, season)
+            cur_names = set(cur_r["Name"])
+            pri_supp  = pri_r[~pri_r["Name"].isin(cur_names)].copy()
+            pri_supp["G_total"] = pri_supp["G"]
+            pri_supp["weeks_sampled"] = _SEASON_2025_WEEKS
+            df = pd.concat([cur_r, pri_supp], ignore_index=True)
+        elif cur_r is not None:
+            df = _normalize_pitcher_cols(cur_r)
+        elif pri_r is not None:
+            df = _normalize_pitcher_cols(pri_r)
+        else:
+            raise RuntimeError("Could not fetch pitcher data for any season via any method")
 
     print(f"  Total: {len(df)} pitchers")
     return df
