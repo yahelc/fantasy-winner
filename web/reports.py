@@ -284,7 +284,7 @@ def get_upgrade_pos_data(league, hitters_scored, pitchers_scored,
         my_names = {p.name for p in my_team.roster}
         fa_names  = {p.name for p in fas}
     else:
-        pos_set = {pos}
+        pos_set = {"LF", "CF", "RF"} if pos == "OF" else {pos}
         my_names = {p.name for p in my_team.roster if pos_set & _primary_slots(p.eligibleSlots)}
         fa_names  = {p.name for p in fas          if pos_set & _primary_slots(p.eligibleSlots)}
 
@@ -599,7 +599,7 @@ def get_percentiles_data(league, week: str = "next", year: int = 2026,
     if source == "fa":
         fas = get_free_agents(league, size=300)
         if pos:
-            pos_set = {pos}
+            pos_set = {"LF", "CF", "RF"} if pos == "OF" else {pos}
             players = [p for p in fas if pos_set & _primary_slots(p.eligibleSlots)]
         else:
             players = fas
