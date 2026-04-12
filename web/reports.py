@@ -586,42 +586,57 @@ def get_schedule_data(league, hitters_scored, pitchers_scored, n: int = 20) -> d
 # 9. Percentiles
 # ---------------------------------------------------------------------------
 
-def get_percentiles_data(league, week: str = "next", year: int = 2026) -> dict:
-    """Returns {"hitters": df, "pitchers": df, "year": int, "week": str}"""
+def get_percentiles_data(league, week: str = "next", year: int = 2026,
+                         source: str = "roster", pos: str = "") -> dict:
+    """Returns {"hitters": df, "pitchers": df, "year": int, "week": str, "source": str, "pos": str}"""
     from percentiles import _fetch_percentiles, _build_table, HITTER_COLS, PITCHER_COLS
 
     hitter_pct  = _fetch_percentiles("batter",  year)
     pitcher_pct = _fetch_percentiles("pitcher", year)
 
-    use_next = (week == "next")
+    pitcher_slots = {"SP", "RP", "P"}
 
-    if use_next:
-        roster = get_roster_for_day(MY_TEAM_NAME, league=league)
-        if not roster:
+    if source == "fa":
+        fas = get_free_agents(league, size=300)
+        if pos:
+            pos_set = {pos}
+            players = [p for p in fas if pos_set & _primary_slots(p.eligibleSlots)]
+        else:
+            players = fas
+        hitter_names  = [p.name for p in players
+                         if not (pitcher_slots & _primary_slots(p.eligibleSlots))]
+        pitcher_names = [p.name for p in players
+                         if pitcher_slots & _primary_slots(p.eligibleSlots)]
+    else:
+        use_next = (week == "next")
+        if use_next:
+            roster = get_roster_for_day(MY_TEAM_NAME, league=league)
+            if not roster:
+                my_team = get_my_team(league, MY_TEAM_NAME)
+                roster = my_team.roster if my_team else []
+        else:
             my_team = get_my_team(league, MY_TEAM_NAME)
             roster = my_team.roster if my_team else []
-    else:
-        my_team = get_my_team(league, MY_TEAM_NAME)
-        roster = my_team.roster if my_team else []
 
-    pitcher_slots = {"SP", "RP", "P"}
-    hitter_names  = []
-    pitcher_names = []
-    for p in roster:
-        slots = set(p.eligibleSlots or [])
-        if slots & pitcher_slots and "C" not in slots and "1B" not in slots:
-            pitcher_names.append(p.name)
-        else:
-            hitter_names.append(p.name)
+        hitter_names  = []
+        pitcher_names = []
+        for p in roster:
+            slots = set(p.eligibleSlots or [])
+            if slots & pitcher_slots and "C" not in slots and "1B" not in slots:
+                pitcher_names.append(p.name)
+            else:
+                hitter_names.append(p.name)
 
     h_table = _build_table(hitter_names, hitter_pct, HITTER_COLS)
     p_table = _build_table(pitcher_names, pitcher_pct, PITCHER_COLS)
 
     return {
-        "hitters": h_table,
+        "hitters":  h_table,
         "pitchers": p_table,
-        "year":    year,
-        "week":    week,
+        "year":     year,
+        "week":     week,
+        "source":   source,
+        "pos":      pos,
     }
 
 

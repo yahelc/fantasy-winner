@@ -251,20 +251,24 @@ async def schedule_data(request: Request, n: int = 100):
 
 @app.get("/percentiles", response_class=HTMLResponse)
 async def percentiles_shell(
-    request: Request, year: int = 2026, week: str = "next", fresh: int = 0
+    request: Request, year: int = 2026, week: str = "next",
+    source: str = "roster", pos: str = "", fresh: int = 0,
 ):
     if fresh:
         data_module.invalidate()
-        return RedirectResponse(url=f"/percentiles?year={year}&week={week}", status_code=302)
+        return RedirectResponse(url=f"/percentiles?year={year}&week={week}&source={source}&pos={pos}", status_code=302)
     cache_info = data_module.get_cache_info()
-    return templates.TemplateResponse(request, "percentiles.html", {"year": year, "week": week, "cache_info": cache_info})
+    return templates.TemplateResponse(request, "percentiles.html", {
+        "year": year, "week": week, "source": source, "pos": pos, "cache_info": cache_info,
+    })
 
 
 @app.get("/percentiles/data", response_class=HTMLResponse)
-async def percentiles_data(request: Request, year: int = 2026, week: str = "next"):
+async def percentiles_data(request: Request, year: int = 2026, week: str = "next",
+                           source: str = "roster", pos: str = ""):
     try:
         league = data_module.get_league_cached()
-        ctx = reports.get_percentiles_data(league, week=week, year=year)
+        ctx = reports.get_percentiles_data(league, week=week, year=year, source=source, pos=pos)
 
         from percentiles import HITTER_COLS, PITCHER_COLS
 

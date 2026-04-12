@@ -1,7 +1,11 @@
 <div>
   <p class="text-muted small mb-3">
     Year: <strong>{{ year }}</strong> &nbsp;|&nbsp;
+    {% if source == 'fa' %}
+    Pool: <strong>Free Agents{% if pos %} — {{ pos }}{% endif %}</strong>
+    {% else %}
     Roster: <strong>{{ "Next week (Tuesday)" if week == "next" else "Current" }}</strong>
+    {% endif %}
   </p>
 
   <div class="section-header">Hitter Percentiles</div>
