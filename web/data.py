@@ -22,6 +22,8 @@ _DATA_TTL   = 1800
 
 def invalidate():
     _mem.clear()
+    for f in (HITTERS_CACHE, PITCHERS_CACHE):
+        f.unlink(missing_ok=True)
 
 
 def get_cache_info() -> dict:
