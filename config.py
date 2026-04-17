@@ -65,3 +65,5 @@ MIN_PA = 20          # low for early season; flag small samples via MIN_PA_RELIA
 MIN_IP = 5          # low threshold — early season has limited IP
 MIN_PA_RELIABLE = 150  # flag players below this as small-sample
 MIN_IP_RELIABLE = 30
+
+SP_STARTS_CAP = 9  # max SP starts credited per team per week

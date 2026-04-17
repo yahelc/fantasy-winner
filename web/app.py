@@ -377,3 +377,43 @@ async def simulate_data(
     except Exception as e:
         traceback.print_exc()
         return _error_fragment(str(e))
+
+
+# ---------------------------------------------------------------------------
+# Matchup SP view
+# ---------------------------------------------------------------------------
+
+@app.get("/matchup", response_class=HTMLResponse)
+async def matchup_shell(
+    request: Request,
+    matchup_id: int = Query(default=None),
+    fresh: int = 0,
+):
+    if fresh:
+        data_module.invalidate()
+        qs = f"?matchup_id={matchup_id}" if matchup_id is not None else ""
+        return RedirectResponse(url=f"/matchup{qs}", status_code=302)
+    league = data_module.get_league_cached()
+    current_mp = getattr(league, "currentMatchupPeriod", 1)
+    cache_info = data_module.get_cache_info()
+    return templates.TemplateResponse(request, "matchup.html", {
+        "matchup_id": matchup_id,
+        "current_mp": current_mp,
+        "cache_info": cache_info,
+    })
+
+
+@app.get("/matchup/data", response_class=HTMLResponse)
+async def matchup_data(
+    request: Request,
+    matchup_id: int = Query(default=None),
+):
+    try:
+        league = data_module.get_league_cached()
+        _, pitchers = data_module.get_scored_data()
+        ctx = reports.get_matchup_data(league, matchup_id, pitchers)
+        ctx["cache_info"] = data_module.get_cache_info()
+        return templates.TemplateResponse(request, "matchup_data.html", ctx)
+    except Exception as e:
+        traceback.print_exc()
+        return _error_fragment(str(e))

@@ -1,0 +1,113 @@
+{% if error is defined %}
+<div class="alert alert-danger">{{ error }}</div>
+{% else %}
+
+{# ── Matchup selector ── #}
+<div class="d-flex align-items-center gap-3 mb-3 flex-wrap">
+  <span class="text-muted small">Week {{ current_mp }}: {{ week_start.strftime("%b %d") }} – {{ week_end.strftime("%b %d") }}</span>
+  <div class="d-flex gap-2 flex-wrap">
+    {% for m in matchup_list %}
+    <a href="/matchup?matchup_id={{ m.id }}"
+       class="btn btn-sm {% if m.id == matchup_id %}btn-primary{% else %}btn-outline-secondary{% endif %}"
+       hx-get="/matchup/data?matchup_id={{ m.id }}"
+       hx-target="#matchup-data"
+       hx-swap="innerHTML"
+       hx-push-url="/matchup?matchup_id={{ m.id }}">
+      {{ m.home_team.split()[0] }} vs {{ m.away_team.split()[0] }}
+    </a>
+    {% endfor %}
+  </div>
+</div>
+
+{# ── SP projection comparison header ── #}
+{% set h = home %}
+{% set a = away %}
+{% set lead = delta | abs %}
+{% set leader = h.team_name if delta >= 0 else a.team_name %}
+<div class="alert {% if delta | abs < 5 %}alert-secondary{% elif delta >= 0 %}alert-success{% else %}alert-warning{% endif %} mb-3 py-2">
+  <div class="row text-center">
+    <div class="col-5 fw-bold fs-5">{{ "%.1f"|format(h.total) }} pts</div>
+    <div class="col-2 text-muted small align-self-center">
+      {% if delta == 0 %}tied{% elif lead < 5 %}±{{ "%.1f"|format(lead) }}{% else %}+{{ "%.1f"|format(lead) }}{% endif %}
+    </div>
+    <div class="col-5 fw-bold fs-5">{{ "%.1f"|format(a.total) }} pts</div>
+  </div>
+  <div class="row text-center text-muted small">
+    <div class="col-5">{{ h.team_name }}</div>
+    <div class="col-2">projected SPs</div>
+    <div class="col-5">{{ a.team_name }}</div>
+  </div>
+</div>
+
+{# ── Two-column split ── #}
+<div class="row g-3">
+  {% for team in [home, away] %}
+  <div class="col-12 col-lg-6">
+    <div class="card h-100">
+      <div class="card-header d-flex justify-content-between align-items-center py-2">
+        <strong>{{ team.team_name }}</strong>
+        <span class="badge {% if team.breach_day %}bg-danger{% else %}bg-secondary{% endif %}">
+          {{ team.start_count }}/{{ cap }} starts
+        </span>
+      </div>
+      <div class="card-body p-0">
+        {% if not team.starts %}
+          <p class="text-muted p-3 mb-0">No SP starts found for this week.</p>
+        {% else %}
+          <table class="table table-sm mb-0">
+            <tbody>
+              {# Group starts by day #}
+              {% set ns = namespace(cur_day=None) %}
+              {% for s in team.starts %}
+                {% if s.day != ns.cur_day %}
+                  {% set ns.cur_day = s.day %}
+                  <tr class="table-light">
+                    <td colspan="4" class="small fw-semibold text-muted py-1 px-3">
+                      {{ s.day }} {{ s.date.strftime("%b %-d") }}
+                    </td>
+                  </tr>
+                {% endif %}
+                <tr {% if not s.counts %}class="table-danger"{% endif %}>
+                  <td class="px-3 py-1">
+                    {{ s.name.split()[-1] }}
+                    {% if s.is_live %}<span class="badge bg-warning text-dark ms-1" style="font-size:.65em">LIVE</span>{% endif %}
+                    {% if not s.counts %}<span class="badge bg-danger ms-1" style="font-size:.65em">NO CREDIT</span>{% endif %}
+                  </td>
+                  <td class="text-muted small py-1">vs {{ s.opponent }}</td>
+                  <td class="text-end pe-3 py-1 {% if not s.is_avg and not s.is_live %}fw-bold{% endif %}">
+                    {% if s.pts != s.pts %}{# NaN #}
+                      <span class="text-muted">—</span>
+                    {% elif s.is_avg %}
+                      <span class="text-muted fst-italic">~{{ "%.1f"|format(s.pts) }}</span>
+                    {% elif s.is_live %}
+                      <span class="text-warning">{{ "%.1f"|format(s.pts) }}</span>
+                    {% else %}
+                      {{ "%.1f"|format(s.pts) }}
+                    {% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        {% endif %}
+      </div>
+      <div class="card-footer py-2 small">
+        <div class="d-flex justify-content-between text-muted">
+          <span>Done: <strong class="text-body">{{ "%.1f"|format(team.pts_done) }}</strong></span>
+          {% if team.pts_live > 0 %}
+          <span>Live: <strong class="text-warning">{{ "%.1f"|format(team.pts_live) }}</strong></span>
+          {% endif %}
+          <span>Remaining: <strong class="text-body">~{{ "%.1f"|format(team.pts_remaining) }}</strong></span>
+          <span class="fw-semibold text-body">Total: {{ "%.1f"|format(team.total) }}</span>
+        </div>
+        {% if team.breach_day %}
+        <div class="text-danger mt-1">
+          ⚠ Cap exceeded {{ team.breach_day.strftime("%a %b %-d") }} — starts after that day won't count.
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}

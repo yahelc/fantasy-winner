@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %} — Matchup{% endblock %}
+{% block content %}
+<div class="d-flex align-items-center gap-3 mb-3">
+  <h4 class="mb-0">SP Matchup</h4>
+  <a href="/matchup{% if matchup_id is not none %}?matchup_id={{ matchup_id }}{% endif %}&fresh=1"
+     class="btn btn-sm btn-outline-secondary">&#8635; Refresh</a>
+</div>
+<p class="text-muted small mb-3">
+  Week {{ current_mp }} starting pitcher projections — cap: 9 starts/team.
+  Past starts show actual pts; live shows current; future shows season avg.
+  <span class="text-danger">Red = start won't count (cap exceeded).</span>
+</p>
+
+<div id="matchup-data"
+     hx-get="/matchup/data{% if matchup_id is not none %}?matchup_id={{ matchup_id }}{% endif %}"
+     hx-trigger="load"
+     hx-swap="innerHTML">
+  <div class="d-flex justify-content-center p-5">
+    <div class="spinner-border text-primary" role="status">
+      <span class="visually-hidden">Loading…</span>
+    </div>
+  </div>
+</div>
+{% endblock %}

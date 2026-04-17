@@ -877,3 +877,344 @@ def get_simulate_data(league, lineup_week: int, scoring_week: int) -> dict:
         "total_active": round(total_active, 1),
         "total_all": round(total_all, 1),
     }
+
+
+# ---------------------------------------------------------------------------
+# 11. Matchup SP view — "can my pitching catch up?"
+# ---------------------------------------------------------------------------
+import unicodedata as _unicodedata
+import math as _math
+
+_MLB_SCHED_URL    = "https://statsapi.mlb.com/api/v1/schedule"
+_MLB_BOXSCORE_URL = "https://statsapi.mlb.com/api/v1/game/{}/boxscore"
+
+_FINAL_STATES = frozenset({"F", "FR", "FT", "FO", "UR", "UF", "O"})
+_LIVE_STATES  = frozenset({"I", "IO", "IR", "MA"})
+_DAY_NAMES    = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+
+
+def _norm_name(name: str) -> str:
+    s = _unicodedata.normalize("NFKD", name)
+    s = "".join(c for c in s if not _unicodedata.combining(c))
+    s = s.lower()
+    for suf in (" jr.", " jr", " sr.", " sr", " ii", " iii", " iv", " v"):
+        if s.endswith(suf):
+            s = s[: -len(suf)]
+    return s.strip()
+
+
+def _fetch_week_schedule_mp(week_start: date, week_end: date) -> list[dict]:
+    import requests as _req
+    r = _req.get(
+        _MLB_SCHED_URL,
+        params={
+            "sportId":   1,
+            "startDate": week_start.isoformat(),
+            "endDate":   week_end.isoformat(),
+            "hydrate":   "probablePitcher,linescore",
+            "gameType":  "R",
+        },
+        headers={"User-Agent": "Mozilla/5.0"},
+        timeout=20,
+    )
+    r.raise_for_status()
+    games = []
+    for date_entry in r.json().get("dates", []):
+        gdate = date.fromisoformat(date_entry["date"])
+        for game in date_entry.get("games", []):
+            coded = game.get("status", {}).get("codedGameState", "S")
+            t = game.get("teams", {})
+            home = t.get("home", {})
+            away = t.get("away", {})
+            hp = home.get("probablePitcher") or {}
+            ap = away.get("probablePitcher") or {}
+            games.append({
+                "game_pk":         game["gamePk"],
+                "date":            gdate,
+                "status":          coded,
+                "home_abbr":       home.get("team", {}).get("abbreviation", ""),
+                "away_abbr":       away.get("team", {}).get("abbreviation", ""),
+                "home_pitcher":    hp.get("fullName"),
+                "home_pitcher_id": hp.get("id"),
+                "away_pitcher":    ap.get("fullName"),
+                "away_pitcher_id": ap.get("id"),
+            })
+    return games
+
+
+def _fetch_boxscore_stats_mp(game_pk: int, pitcher_id: int, cache: dict) -> dict | None:
+    import requests as _req
+    if game_pk not in cache:
+        try:
+            r = _req.get(
+                _MLB_BOXSCORE_URL.format(game_pk),
+                headers={"User-Agent": "Mozilla/5.0"},
+                timeout=15,
+            )
+            cache[game_pk] = r.json() if r.ok else None
+        except Exception:
+            cache[game_pk] = None
+
+    data = cache[game_pk]
+    if not data:
+        return None
+
+    teams = data.get("teams", {})
+    for side in ("home", "away"):
+        player = teams.get(side, {}).get("players", {}).get(f"ID{pitcher_id}")
+        if not player:
+            continue
+        pit = player.get("stats", {}).get("pitching", {})
+        if not pit:
+            continue
+
+        try:
+            ip = float(pit.get("inningsPitched", 0) or 0)
+        except (ValueError, TypeError):
+            ip = 0.0
+
+        er   = int(pit.get("earnedRuns",  0) or 0)
+        hits = int(pit.get("hits",        0) or 0)
+        bb   = int(pit.get("baseOnBalls", 0) or 0)
+        k    = int(pit.get("strikeOuts",  0) or 0)
+
+        dec   = data.get("decisions") or {}
+        is_w  = (dec.get("winner") or {}).get("id") == pitcher_id
+        is_l  = (dec.get("loser")  or {}).get("id") == pitcher_id
+        is_sv = (dec.get("save")   or {}).get("id") == pitcher_id
+        qs    = 1 if ip >= 6.0 and er <= 3 else 0
+
+        opp_side = "away" if side == "home" else "home"
+        opp_bat  = teams.get(opp_side, {}).get("teamStats", {}).get("batting", {})
+        nh = 1 if int(opp_bat.get("hits", 1) or 1) == 0 else 0
+        pg = 1 if (nh
+                   and int(opp_bat.get("baseOnBalls", 1) or 1) == 0
+                   and int(opp_bat.get("hitBatsmen",  1) or 1) == 0) else 0
+
+        return {
+            "IP": ip, "H": hits, "ER": er, "BB": bb, "K": k,
+            "W": int(is_w), "L": int(is_l), "SV": int(is_sv),
+            "QS": qs, "NH": nh, "PG": pg,
+        }
+    return None
+
+
+def _stats_to_pts_mp(stats: dict) -> float:
+    from config import PITCHING_WEIGHTS
+    return sum(PITCHING_WEIGHTS.get(s, 0) * float(v or 0) for s, v in stats.items())
+
+
+def _sp_avg_pts(name: str, scored_pitchers) -> float:
+    if scored_pitchers is None or scored_pitchers.empty:
+        return float("nan")
+    norm = _norm_name(name)
+    for _, row in scored_pitchers.iterrows():
+        if _norm_name(str(row.get("Name", ""))) == norm:
+            return float(row.get("pts_per_game", float("nan")))
+    last = norm.split()[-1]
+    matches = [row for _, row in scored_pitchers.iterrows()
+               if _norm_name(str(row.get("Name", ""))).split()[-1] == last]
+    if len(matches) == 1:
+        return float(matches[0].get("pts_per_game", float("nan")))
+    return float("nan")
+
+
+def _get_matchup_list_mp(league) -> list[dict]:
+    import requests as _req, json as _json
+    current_mp = getattr(league, "currentMatchupPeriod", 1)
+    endpoint = (
+        f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/flb"
+        f"/seasons/{SEASON}/segments/0/leagues/{league.league_id}"
+    )
+    filt = {"schedule": {"filterMatchupPeriodIds": {"value": [current_mp]}}}
+    r = _req.get(
+        endpoint,
+        params={"view": "mMatchup"},
+        headers={"User-Agent": "Mozilla/5.0", "x-fantasy-filter": _json.dumps(filt)},
+        timeout=15,
+    )
+    r.raise_for_status()
+    team_map = {t.team_id: t.team_name for t in league.teams}
+    matchups = []
+    for i, m in enumerate(r.json().get("schedule", [])):
+        home_id = (m.get("home") or {}).get("teamId")
+        away_id = (m.get("away") or {}).get("teamId")
+        if home_id is None or away_id is None:
+            continue
+        matchups.append({
+            "id":           i,
+            "home_team":    team_map.get(home_id, f"Team {home_id}"),
+            "away_team":    team_map.get(away_id, f"Team {away_id}"),
+            "home_team_id": home_id,
+            "away_team_id": away_id,
+        })
+    return matchups
+
+
+def _build_team_starts_mp(
+    roster, pitcher_game_map: dict, scored_pitchers,
+    cap: int, boxscore_cache: dict,
+) -> dict:
+    from collections import defaultdict
+    from datetime import timedelta
+
+    sps = [p for p in roster if "SP" in (getattr(p, "eligibleSlots", None) or [])]
+
+    all_starts = []
+    for p in sps:
+        norm  = _norm_name(p.name)
+        games = pitcher_game_map.get(norm, [])
+        if not games:
+            last  = norm.split()[-1]
+            cands = [k for k in pitcher_game_map if k.split()[-1] == last]
+            if len(cands) == 1:
+                games = pitcher_game_map[cands[0]]
+
+        avg = _sp_avg_pts(p.name, scored_pitchers)
+
+        for g in games:
+            status    = g["status"]
+            is_final  = status in _FINAL_STATES
+            is_live   = status in _LIVE_STATES
+            is_future = not is_final and not is_live
+            pid       = g["pitcher_id"]
+            pts       = float("nan")
+
+            if (is_final or is_live) and pid:
+                raw = _fetch_boxscore_stats_mp(g["game_pk"], pid, boxscore_cache)
+                if raw:
+                    pts = round(_stats_to_pts_mp(raw), 1)
+                elif is_final:
+                    pts = 0.0
+
+            if _math.isnan(pts):
+                pts      = avg
+                is_live  = False
+                is_final = False
+                is_future = True
+
+            all_starts.append({
+                "name":     p.name,
+                "date":     g["date"],
+                "day":      _DAY_NAMES[g["date"].weekday()],
+                "opponent": g["opponent"],
+                "pts":      pts,
+                "is_avg":   is_future,
+                "is_live":  is_live and not is_future,
+                "counts":   True,
+            })
+
+    all_starts.sort(key=lambda x: (x["date"], x["name"]))
+
+    # Cap logic: find breach day, mark subsequent days red
+    cum        = 0
+    breach_day = None
+    by_day: dict = defaultdict(list)
+    for s in all_starts:
+        by_day[s["date"]].append(s)
+
+    for d in sorted(by_day):
+        day_starts = by_day[d]
+        if breach_day is not None and d > breach_day:
+            for s in day_starts:
+                s["counts"] = False
+        else:
+            cum += len(day_starts)
+            if cum > cap and breach_day is None:
+                breach_day = d
+
+    pts_done      = sum(s["pts"] for s in all_starts
+                        if not s["is_avg"] and not s["is_live"]
+                        and s["counts"] and not _math.isnan(s["pts"]))
+    pts_live      = sum(s["pts"] for s in all_starts
+                        if s["is_live"] and s["counts"]
+                        and not _math.isnan(s["pts"]))
+    pts_remaining = sum(s["pts"] for s in all_starts
+                        if s["is_avg"] and s["counts"]
+                        and not _math.isnan(s["pts"]))
+
+    return {
+        "starts":        all_starts,
+        "start_count":   sum(1 for s in all_starts if s["counts"]),
+        "cap":           cap,
+        "breach_day":    breach_day,
+        "pts_done":      round(pts_done, 1),
+        "pts_live":      round(pts_live, 1),
+        "pts_remaining": round(pts_remaining, 1),
+        "total":         round(pts_done + pts_live + pts_remaining, 1),
+    }
+
+
+def get_matchup_data(league, matchup_id: int | None, scored_pitchers) -> dict:
+    from config import SP_STARTS_CAP
+    from datetime import timedelta
+
+    current_mp = getattr(league, "currentMatchupPeriod", 1)
+    week_start = _week_start_date(current_mp)
+    week_end   = week_start + timedelta(days=6)
+
+    matchup_list = _get_matchup_list_mp(league)
+
+    if matchup_id is None:
+        matchup_id = 0
+        for m in matchup_list:
+            if (MY_TEAM_NAME.lower() in m["home_team"].lower() or
+                    MY_TEAM_NAME.lower() in m["away_team"].lower()):
+                matchup_id = m["id"]
+                break
+
+    sel = next((m for m in matchup_list if m["id"] == matchup_id), None)
+    if sel is None and matchup_list:
+        sel        = matchup_list[0]
+        matchup_id = 0
+    if sel is None:
+        return {"matchup_list": [], "error": "No matchups found"}
+
+    team_roster = {t.team_id: t.roster for t in league.teams}
+    home_roster = team_roster.get(sel["home_team_id"], [])
+    away_roster = team_roster.get(sel["away_team_id"], [])
+
+    schedule = _fetch_week_schedule_mp(week_start, week_end)
+
+    pitcher_game_map: dict[str, list] = {}
+    for g in schedule:
+        for role in ("home_pitcher", "away_pitcher"):
+            pname = g.get(role)
+            if not pname:
+                continue
+            pid      = g.get(role + "_id")
+            opponent = g["away_abbr"] if role == "home_pitcher" else g["home_abbr"]
+            norm     = _norm_name(pname)
+            pitcher_game_map.setdefault(norm, []).append({
+                "game_pk":    g["game_pk"],
+                "date":       g["date"],
+                "status":     g["status"],
+                "opponent":   opponent,
+                "pitcher_id": pid,
+            })
+
+    boxscore_cache: dict = {}
+
+    home_data = _build_team_starts_mp(
+        home_roster, pitcher_game_map, scored_pitchers, SP_STARTS_CAP, boxscore_cache,
+    )
+    home_data["team_name"] = sel["home_team"]
+
+    away_data = _build_team_starts_mp(
+        away_roster, pitcher_game_map, scored_pitchers, SP_STARTS_CAP, boxscore_cache,
+    )
+    away_data["team_name"] = sel["away_team"]
+
+    delta = round(home_data["total"] - away_data["total"], 1)
+
+    return {
+        "matchup_list": matchup_list,
+        "matchup_id":   matchup_id,
+        "week_start":   week_start,
+        "week_end":     week_end,
+        "current_mp":   current_mp,
+        "cap":          SP_STARTS_CAP,
+        "home":         home_data,
+        "away":         away_data,
+        "delta":        delta,
+    }
