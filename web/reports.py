@@ -894,14 +894,26 @@ _DAY_NAMES    = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
 def _fetch_team_wrc_plus() -> dict[str, int]:
-    """Returns {MLB_Stats_API_abbr: wRC+} for the current season."""
+    """Returns {MLB_Stats_API_abbr: wRC+} for the current season via FanGraphs API."""
+    import requests as _req
     try:
-        from pybaseball import team_batting
-        df = team_batting(SEASON, SEASON)
+        r = _req.get(
+            "https://www.fangraphs.com/api/leaders/major-league/data",
+            params={
+                "pos": "all", "stats": "bat", "lg": "all", "qual": "0",
+                "type": "8", "startseason": SEASON, "endseason": SEASON,
+                "team": "0,ts", "month": "0", "pageitems": "35",
+                "pagenum": "1", "ind": "0", "rost": "0", "players": "0",
+            },
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=15,
+        )
+        r.raise_for_status()
+        rows = r.json().get("data", [])
         result = {}
-        for _, row in df.iterrows():
-            fg = str(row.get("Team", ""))
-            wrc = row.get("wRC+")
+        for row in rows:
+            fg = str(row.get("Tm") or row.get("Team") or row.get("TeamName") or "")
+            wrc = row.get("wRC+") or row.get("wRCplus")
             if not fg or wrc is None:
                 continue
             try:
@@ -1156,6 +1168,7 @@ def _build_team_starts_mp(
                 "date":     g["date"],
                 "day":      _DAY_NAMES[g["date"].weekday()],
                 "opponent": g["opponent"],
+                "is_home":  g.get("is_home", True),
                 "opp_wrc":  (team_wrc or {}).get(g["opponent"].upper()),
                 "pts":      pts,
                 "is_avg":   is_future,
@@ -1261,6 +1274,7 @@ def get_matchup_data(league, matchup_id: int | None, scored_pitchers) -> dict:
                 "date":         g["date"],
                 "status":       g["status"],
                 "opponent":     opponent,
+                "is_home":      role == "home_pitcher",
                 "pitcher_id":   pid,
                 "pitcher_team": pitcher_team,
             })

@@ -94,7 +94,7 @@
                     {% if not s.counts %}<span class="badge bg-danger ms-1" style="font-size:.65em">NO CREDIT</span>{% endif %}
                   </td>
                   <td class="text-muted small py-1">
-                    vs {{ s.opponent }}
+                    {% if s.is_home %}vs{% else %}@{% endif %} {{ s.opponent }}
                     {% if s.opp_wrc is not none %}
                       <span class="{% if s.opp_wrc < 90 %}text-success{% elif s.opp_wrc > 110 %}text-danger{% else %}text-muted{% endif %}" style="font-size:.8em">({{ s.opp_wrc }})</span>
                     {% endif %}
