@@ -893,35 +893,24 @@ _LIVE_STATES  = frozenset({"I", "IO", "IR", "MA"})
 _DAY_NAMES    = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
-def _fetch_team_wrc_plus() -> dict[str, int]:
-    """Returns {MLB_Stats_API_abbr: wRC+} for the current season via FanGraphs API."""
-    import requests as _req
+def _fetch_team_wrc_plus(scored_hitters=None) -> dict[str, int]:
+    """Returns {MLB_Stats_API_abbr: wRC+} computed from the already-fetched hitter data."""
+    if scored_hitters is None or scored_hitters.empty:
+        return {}
     try:
-        r = _req.get(
-            "https://www.fangraphs.com/api/leaders/major-league/data",
-            params={
-                "pos": "all", "stats": "bat", "lg": "all", "qual": "0",
-                "type": "8", "startseason": SEASON, "endseason": SEASON,
-                "team": "0,ts", "month": "0", "pageitems": "35",
-                "pagenum": "1", "ind": "0", "rost": "0", "players": "0",
-            },
-            headers={"User-Agent": "Mozilla/5.0"},
-            timeout=15,
-        )
-        r.raise_for_status()
-        rows = r.json().get("data", [])
+        df = scored_hitters.copy()
+        if "wRC+" not in df.columns or "Team" not in df.columns or "PA" not in df.columns:
+            return {}
+        df = df[df["PA"] > 0].dropna(subset=["wRC+", "PA", "Team"])
+        # Weighted average wRC+ by team
         result = {}
-        for row in rows:
-            fg = str(row.get("Tm") or row.get("Team") or row.get("TeamName") or "")
-            wrc = row.get("wRC+") or row.get("wRCplus")
-            if not fg or wrc is None:
+        for fg_team, grp in df.groupby("Team"):
+            total_pa = grp["PA"].sum()
+            if total_pa == 0:
                 continue
-            try:
-                val = int(round(float(wrc)))
-            except (ValueError, TypeError):
-                continue
-            mlb = _FG_TO_SCHED.get(fg, fg)
-            result[mlb.upper()] = val
+            wrc = (grp["wRC+"] * grp["PA"]).sum() / total_pa
+            mlb = _FG_TO_SCHED.get(str(fg_team), str(fg_team))
+            result[mlb.upper()] = int(round(wrc))
         return result
     except Exception:
         return {}
@@ -1226,7 +1215,7 @@ def _build_team_starts_mp(
     }
 
 
-def get_matchup_data(league, matchup_id: int | None, scored_pitchers) -> dict:
+def get_matchup_data(league, matchup_id: int | None, scored_pitchers, scored_hitters=None) -> dict:
     from config import SP_STARTS_CAP
     from datetime import timedelta
 
@@ -1292,7 +1281,7 @@ def get_matchup_data(league, matchup_id: int | None, scored_pitchers) -> dict:
             if norm not in last_start_map or d > last_start_map[norm]:
                 last_start_map[norm] = d
 
-    team_wrc = _fetch_team_wrc_plus()
+    team_wrc = _fetch_team_wrc_plus(scored_hitters)
     boxscore_cache: dict = {}
 
     home_data = _build_team_starts_mp(

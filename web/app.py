@@ -420,8 +420,8 @@ async def matchup_data(
 ):
     try:
         league = data_module.get_league_cached()
-        _, pitchers = data_module.get_scored_data()
-        ctx = reports.get_matchup_data(league, matchup_id, pitchers)
+        hitters, pitchers = data_module.get_scored_data()
+        ctx = reports.get_matchup_data(league, matchup_id, pitchers, hitters)
         ctx["cache_info"] = data_module.get_cache_info()
         return templates.TemplateResponse(request, "matchup_data.html", ctx)
     except Exception as e:
