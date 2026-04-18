@@ -12,6 +12,7 @@
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
   <div class="container-fluid">
     <a class="navbar-brand fw-bold" href="/">⚾ Fantasy Winner</a>
+    <span class="navbar-text text-muted small me-2">{{ git_deploy_time }}</span>
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav">
       <span class="navbar-toggler-icon"></span>
     </button>
@@ -37,8 +38,7 @@
         <li class="nav-item"><a class="nav-link" href="/matchup">Matchup</a></li>
       </ul>
       <span class="navbar-text text-muted small">
-        {% if cache_info.data_age %}Data: {{ cache_info.data_age }} &nbsp;·&nbsp; {% endif %}
-        <span title="last deployed commit">Deploy: {{ git_deploy_time }}</span>
+        {% if cache_info.data_age %}Data: {{ cache_info.data_age }}{% endif %}
       </span>
     </div>
   </div>
