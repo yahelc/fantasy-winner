@@ -1058,11 +1058,11 @@ def _build_team_starts_mp(
     from collections import defaultdict
     from datetime import timedelta
 
-    _IL_SLOTS = {"IL", "IL+", "NA"}
+    _ACTIVE_SP_SLOTS = {"SP", "P"}
     sps = [
         p for p in roster
         if "SP" in (getattr(p, "eligibleSlots", None) or [])
-        and getattr(p, "lineupSlot", "") not in _IL_SLOTS
+        and getattr(p, "lineupSlot", "") in _ACTIVE_SP_SLOTS
     ]
 
     # Build name → MLB Stats API team abbreviation from scored_pitchers
