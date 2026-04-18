@@ -1,6 +1,7 @@
 # pip install fastapi uvicorn[standard] jinja2
 # Run: .venv/bin/uvicorn web.app:app --host 0.0.0.0 --port 8000 --reload
 
+import subprocess
 import sys
 import traceback
 from pathlib import Path
@@ -20,6 +21,14 @@ app = FastAPI()
 BASE = Path(__file__).parent
 app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 templates = Jinja2Templates(directory=BASE / "templates")
+
+try:
+    _GIT_SHA = subprocess.check_output(
+        ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL
+    ).decode().strip()
+except Exception:
+    _GIT_SHA = "unknown"
+templates.env.globals["git_sha"] = _GIT_SHA
 
 
 def _error_fragment(msg: str) -> HTMLResponse:

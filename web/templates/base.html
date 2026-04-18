@@ -37,7 +37,8 @@
         <li class="nav-item"><a class="nav-link" href="/matchup">Matchup</a></li>
       </ul>
       <span class="navbar-text text-muted small">
-        {% if cache_info.data_age %}Data: {{ cache_info.data_age }}{% endif %}
+        {% if cache_info.data_age %}Data: {{ cache_info.data_age }} &nbsp;·&nbsp; {% endif %}
+        <span class="font-monospace" title="deployed commit">{{ git_sha }}</span>
       </span>
     </div>
   </div>
