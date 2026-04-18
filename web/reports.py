@@ -1125,7 +1125,7 @@ def _build_team_starts_mp(
                 s["counts"] = False
         else:
             cum += len(day_starts)
-            if cum > cap and breach_day is None:
+            if cum >= cap and breach_day is None:
                 breach_day = d
 
     pts_done      = sum(s["pts"] for s in all_starts
