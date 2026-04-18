@@ -23,12 +23,13 @@ app.mount("/static", StaticFiles(directory=BASE / "static"), name="static")
 templates = Jinja2Templates(directory=BASE / "templates")
 
 try:
-    _GIT_SHA = subprocess.check_output(
-        ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL
-    ).decode().strip()
+    _GIT_DEPLOY_TIME = subprocess.check_output(
+        ["git", "log", "-1", "--format=%cd", "--date=format:%b %-d %-I:%M%p"],
+        stderr=subprocess.DEVNULL,
+    ).decode().strip().lower()
 except Exception:
-    _GIT_SHA = "unknown"
-templates.env.globals["git_sha"] = _GIT_SHA
+    _GIT_DEPLOY_TIME = "unknown"
+templates.env.globals["git_deploy_time"] = _GIT_DEPLOY_TIME
 
 
 def _error_fragment(msg: str) -> HTMLResponse:
