@@ -1076,6 +1076,8 @@ def _build_team_starts_mp(
     for p in sps:
         norm     = _norm_name(p.name)
         pro_team = getattr(p, "proTeam", "") or ""
+        if pro_team in ("None", "FA", "Unknown"):
+            pro_team = ""
         games    = pitcher_game_map.get(norm, [])
         if not games:
             last  = norm.split()[-1]
@@ -1089,6 +1091,15 @@ def _build_team_starts_mp(
             team_games = [g for g in games if _team_matches(pro_team, g.get("pitcher_team", ""))]
             if team_games:
                 games = team_games
+
+        # A pitcher cannot start twice on the same date — deduplicate.
+        seen_dates: set = set()
+        deduped = []
+        for g in games:
+            if g["date"] not in seen_dates:
+                seen_dates.add(g["date"])
+                deduped.append(g)
+        games = deduped
 
         avg = _sp_avg_pts(p.name, scored_pitchers)
 
