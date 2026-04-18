@@ -1058,7 +1058,12 @@ def _build_team_starts_mp(
     from collections import defaultdict
     from datetime import timedelta
 
-    sps = [p for p in roster if "SP" in (getattr(p, "eligibleSlots", None) or [])]
+    _IL_SLOTS = {"IL", "IL+", "NA"}
+    sps = [
+        p for p in roster
+        if "SP" in (getattr(p, "eligibleSlots", None) or [])
+        and getattr(p, "lineupSlot", "") not in _IL_SLOTS
+    ]
 
     all_starts = []
     for p in sps:
@@ -1149,8 +1154,10 @@ def get_matchup_data(league, matchup_id: int | None, scored_pitchers) -> dict:
     from config import SP_STARTS_CAP
     from datetime import timedelta
 
+    # ESPN matchup weeks run Mon–Sun; week 1 = Mar 30 (first Mon of season)
+    _MATCHUP_WEEK1_MON = date(2026, 3, 30)
     current_mp = getattr(league, "currentMatchupPeriod", 1)
-    week_start = _week_start_date(current_mp)
+    week_start = _MATCHUP_WEEK1_MON + timedelta(days=(current_mp - 1) * 7)
     week_end   = week_start + timedelta(days=6)
 
     matchup_list = _get_matchup_list_mp(league)

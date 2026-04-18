@@ -22,20 +22,39 @@
 {# ── SP projection comparison header ── #}
 {% set h = home %}
 {% set a = away %}
-{% set lead = delta | abs %}
-{% set leader = h.team_name if delta >= 0 else a.team_name %}
-<div class="alert {% if delta | abs < 5 %}alert-secondary{% elif delta >= 0 %}alert-success{% else %}alert-warning{% endif %} mb-3 py-2">
-  <div class="row text-center">
-    <div class="col-5 fw-bold fs-5">{{ "%.1f"|format(h.total) }} pts</div>
-    <div class="col-2 text-muted small align-self-center">
-      {% if delta == 0 %}tied{% elif lead < 5 %}±{{ "%.1f"|format(lead) }}{% else %}+{{ "%.1f"|format(lead) }}{% endif %}
+{% set both_max = [h.total, a.total] | max %}
+{% macro team_bar(team) %}
+  {% set done_pct  = (((team.pts_done + team.pts_live) / both_max * 100) | int) if both_max > 0 else 0 %}
+  {% set proj_pct  = ((team.pts_remaining / both_max * 100) | int) if both_max > 0 else 0 %}
+  <div class="mb-1 d-flex align-items-center gap-2">
+    <span class="small text-muted" style="width:3.5rem;text-align:right">{{ "%.1f"|format(team.pts_done + team.pts_live) }}</span>
+    <div class="progress flex-grow-1" style="height:18px">
+      <div class="progress-bar bg-success" style="width:{{ done_pct }}%"
+           title="Actual: {{ '%.1f'|format(team.pts_done + team.pts_live) }} pts"></div>
+      <div class="progress-bar bg-success bg-opacity-25" style="width:{{ proj_pct }}%"
+           title="Projected: ~{{ '%.1f'|format(team.pts_remaining) }} pts"></div>
     </div>
-    <div class="col-5 fw-bold fs-5">{{ "%.1f"|format(a.total) }} pts</div>
+    <span class="small fw-bold" style="width:3.5rem">~{{ "%.1f"|format(team.total) }}</span>
   </div>
-  <div class="row text-center text-muted small">
-    <div class="col-5">{{ h.team_name }}</div>
-    <div class="col-2">projected SPs</div>
-    <div class="col-5">{{ a.team_name }}</div>
+  <div class="small text-muted px-1" style="padding-left:3.8rem">
+    {{ team.team_name }}
+    &nbsp;·&nbsp; {{ team.start_count }}/{{ cap }} starts
+    &nbsp;·&nbsp; <span class="text-success">{{ "%.1f"|format(team.pts_done + team.pts_live) }} actual</span>
+    + <span class="text-muted fst-italic">~{{ "%.1f"|format(team.pts_remaining) }} proj</span>
+  </div>
+{% endmacro %}
+<div class="card mb-3">
+  <div class="card-body py-2">
+    {{ team_bar(h) }}
+    <div class="my-2"></div>
+    {{ team_bar(a) }}
+    <div class="text-center text-muted small mt-2">
+      {% set lead = delta | abs %}
+      {% if lead < 0.1 %}Even on projected SP pts
+      {% elif delta > 0 %}{{ h.team_name.split()[0] }} leads by <strong>+{{ "%.1f"|format(lead) }}</strong> projected SP pts
+      {% else %}{{ a.team_name.split()[0] }} leads by <strong>+{{ "%.1f"|format(lead) }}</strong> projected SP pts
+      {% endif %}
+    </div>
   </div>
 </div>
 
