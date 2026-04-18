@@ -1065,15 +1065,30 @@ def _build_team_starts_mp(
         and getattr(p, "lineupSlot", "") not in _IL_SLOTS
     ]
 
+    # ESPN → MLB Stats API abbreviation overrides (edge cases)
+    _ESPN_TO_MLB = {"WAS": "WSH", "GS": "SF"}
+
+    def _team_matches(espn_abbr: str, mlb_abbr: str) -> bool:
+        normalized = _ESPN_TO_MLB.get(espn_abbr.upper(), espn_abbr.upper())
+        return normalized == mlb_abbr.upper()
+
     all_starts = []
     for p in sps:
-        norm  = _norm_name(p.name)
-        games = pitcher_game_map.get(norm, [])
+        norm     = _norm_name(p.name)
+        pro_team = getattr(p, "proTeam", "") or ""
+        games    = pitcher_game_map.get(norm, [])
         if not games:
             last  = norm.split()[-1]
             cands = [k for k in pitcher_game_map if k.split()[-1] == last]
             if len(cands) == 1:
                 games = pitcher_game_map[cands[0]]
+
+        # Filter to games that involve the player's actual MLB team, if known.
+        # Fall back to unfiltered list only if no games survive (abbr mismatch safety).
+        if pro_team and games:
+            team_games = [g for g in games if _team_matches(pro_team, g.get("pitcher_team", ""))]
+            if team_games:
+                games = team_games
 
         avg = _sp_avg_pts(p.name, scored_pitchers)
 
@@ -1189,15 +1204,17 @@ def get_matchup_data(league, matchup_id: int | None, scored_pitchers) -> dict:
             pname = g.get(role)
             if not pname:
                 continue
-            pid      = g.get(role + "_id")
-            opponent = g["away_abbr"] if role == "home_pitcher" else g["home_abbr"]
-            norm     = _norm_name(pname)
+            pid          = g.get(role + "_id")
+            pitcher_team = g["home_abbr"] if role == "home_pitcher" else g["away_abbr"]
+            opponent     = g["away_abbr"] if role == "home_pitcher" else g["home_abbr"]
+            norm         = _norm_name(pname)
             pitcher_game_map.setdefault(norm, []).append({
-                "game_pk":    g["game_pk"],
-                "date":       g["date"],
-                "status":     g["status"],
-                "opponent":   opponent,
-                "pitcher_id": pid,
+                "game_pk":      g["game_pk"],
+                "date":         g["date"],
+                "status":       g["status"],
+                "opponent":     opponent,
+                "pitcher_id":   pid,
+                "pitcher_team": pitcher_team,
             })
 
     boxscore_cache: dict = {}
