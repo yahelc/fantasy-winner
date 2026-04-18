@@ -65,7 +65,7 @@
     <div class="card h-100">
       <div class="card-header d-flex justify-content-between align-items-center py-2">
         <strong>{{ team.team_name }}</strong>
-        <span class="badge {% if team.breach_day %}bg-danger{% else %}bg-secondary{% endif %}">
+        <span class="badge {% if team.breach_day and team.breach_day < week_end %}bg-danger{% else %}bg-secondary{% endif %}">
           {{ team.start_count }}/{{ cap }} starts
         </span>
       </div>
@@ -119,7 +119,7 @@
           <span>Remaining: <strong class="text-body">~{{ "%.1f"|format(team.pts_remaining) }}</strong></span>
           <span class="fw-semibold text-body">Total: {{ "%.1f"|format(team.total) }}</span>
         </div>
-        {% if team.breach_day %}
+        {% if team.breach_day and team.breach_day < week_end %}
         <div class="text-danger mt-1">
           ⚠ Cap exceeded {{ team.breach_day.strftime("%a %b %-d") }} — starts after that day won't count.
         </div>
