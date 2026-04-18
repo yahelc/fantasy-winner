@@ -1065,19 +1065,21 @@ def _build_team_starts_mp(
         and getattr(p, "lineupSlot", "") not in _IL_SLOTS
     ]
 
-    # ESPN → MLB Stats API abbreviation overrides (edge cases)
-    _ESPN_TO_MLB = {"WAS": "WSH", "GS": "SF"}
-
-    def _team_matches(espn_abbr: str, mlb_abbr: str) -> bool:
-        normalized = _ESPN_TO_MLB.get(espn_abbr.upper(), espn_abbr.upper())
-        return normalized == mlb_abbr.upper()
+    # Build name → MLB Stats API team abbreviation from scored_pitchers
+    # (FanGraphs team data is accurate; convert via existing _FG_TO_SCHED map)
+    scored_team_map: dict[str, str] = {}
+    if scored_pitchers is not None and not scored_pitchers.empty:
+        for _, row in scored_pitchers.iterrows():
+            n = _norm_name(str(row.get("Name", "")))
+            fg_team = str(row.get("Team", ""))
+            mlb_team = _FG_TO_SCHED.get(fg_team, fg_team)
+            if n and mlb_team:
+                scored_team_map[n] = mlb_team.upper()
 
     all_starts = []
     for p in sps:
         norm     = _norm_name(p.name)
-        pro_team = getattr(p, "proTeam", "") or ""
-        if pro_team in ("None", "FA", "Unknown"):
-            pro_team = ""
+        mlb_team = scored_team_map.get(norm, "")
         games    = pitcher_game_map.get(norm, [])
         if not games:
             last  = norm.split()[-1]
@@ -1085,10 +1087,11 @@ def _build_team_starts_mp(
             if len(cands) == 1:
                 games = pitcher_game_map[cands[0]]
 
-        # Filter to games that involve the player's actual MLB team, if known.
-        # Fall back to unfiltered list only if no games survive (abbr mismatch safety).
-        if pro_team and games:
-            team_games = [g for g in games if _team_matches(pro_team, g.get("pitcher_team", ""))]
+        # Filter to games on the player's actual MLB team.
+        # Falls back to unfiltered only if team unknown (player not in scored data).
+        if mlb_team and games:
+            team_games = [g for g in games
+                          if g.get("pitcher_team", "").upper() == mlb_team]
             if team_games:
                 games = team_games
 
