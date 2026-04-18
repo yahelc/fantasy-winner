@@ -92,7 +92,15 @@
                     {% if s.is_live %}<span class="badge bg-warning text-dark ms-1" style="font-size:.65em">LIVE</span>{% endif %}
                     {% if not s.counts %}<span class="badge bg-danger ms-1" style="font-size:.65em">NO CREDIT</span>{% endif %}
                   </td>
-                  <td class="text-muted small py-1">vs {{ s.opponent }}</td>
+                  <td class="text-muted small py-1">
+                    vs {{ s.opponent }}
+                    {% if s.opp_wrc is not none %}
+                      <span class="{% if s.opp_wrc < 90 %}text-success{% elif s.opp_wrc > 110 %}text-danger{% else %}text-muted{% endif %}" style="font-size:.8em">({{ s.opp_wrc }})</span>
+                    {% endif %}
+                    {% if s.days_rest is not none %}
+                      <span class="text-muted" style="font-size:.8em">· {{ s.days_rest }}R</span>
+                    {% endif %}
+                  </td>
                   <td class="text-end pe-3 py-1 {% if not s.is_avg and not s.is_live %}fw-bold{% endif %}">
                     {% if s.pts != s.pts %}{# NaN #}
                       <span class="text-muted">—</span>

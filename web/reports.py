@@ -893,6 +893,28 @@ _LIVE_STATES  = frozenset({"I", "IO", "IR", "MA"})
 _DAY_NAMES    = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
+def _fetch_team_wrc_plus() -> dict[str, int]:
+    """Returns {MLB_Stats_API_abbr: wRC+} for the current season."""
+    try:
+        from pybaseball import team_batting
+        df = team_batting(SEASON, SEASON)
+        result = {}
+        for _, row in df.iterrows():
+            fg = str(row.get("Team", ""))
+            wrc = row.get("wRC+")
+            if not fg or wrc is None:
+                continue
+            try:
+                val = int(round(float(wrc)))
+            except (ValueError, TypeError):
+                continue
+            mlb = _FG_TO_SCHED.get(fg, fg)
+            result[mlb.upper()] = val
+        return result
+    except Exception:
+        return {}
+
+
 def _norm_name(name: str) -> str:
     s = _unicodedata.normalize("NFKD", name)
     s = "".join(c for c in s if not _unicodedata.combining(c))
@@ -1054,6 +1076,8 @@ def _get_matchup_list_mp(league) -> list[dict]:
 def _build_team_starts_mp(
     roster, pitcher_game_map: dict, scored_pitchers,
     cap: int, boxscore_cache: dict,
+    team_wrc: dict | None = None,
+    last_start_map: dict | None = None,
 ) -> dict:
     from collections import defaultdict
     from datetime import timedelta
@@ -1132,13 +1156,23 @@ def _build_team_starts_mp(
                 "date":     g["date"],
                 "day":      _DAY_NAMES[g["date"].weekday()],
                 "opponent": g["opponent"],
+                "opp_wrc":  (team_wrc or {}).get(g["opponent"].upper()),
                 "pts":      pts,
                 "is_avg":   is_future,
                 "is_live":  is_live and not is_future,
                 "counts":   True,
+                "days_rest": None,
             })
 
     all_starts.sort(key=lambda x: (x["date"], x["name"]))
+
+    # Compute days rest: days between this start and the pitcher's previous start
+    recent: dict[str, date] = dict(last_start_map or {})
+    for s in all_starts:
+        norm = _norm_name(s["name"])
+        prev = recent.get(norm)
+        s["days_rest"] = (s["date"] - prev).days - 1 if prev is not None else None
+        recent[norm] = s["date"]
 
     # Cap logic: find breach day, mark subsequent days red
     cum        = 0
@@ -1231,15 +1265,31 @@ def get_matchup_data(league, matchup_id: int | None, scored_pitchers) -> dict:
                 "pitcher_team": pitcher_team,
             })
 
+    # Lookback schedule: find each pitcher's last start before this week
+    lookback = _fetch_week_schedule_mp(week_start - timedelta(days=8), week_start - timedelta(days=1))
+    last_start_map: dict[str, date] = {}
+    for g in lookback:
+        for role in ("home_pitcher", "away_pitcher"):
+            pname = g.get(role)
+            if not pname:
+                continue
+            norm = _norm_name(pname)
+            d = g["date"]
+            if norm not in last_start_map or d > last_start_map[norm]:
+                last_start_map[norm] = d
+
+    team_wrc = _fetch_team_wrc_plus()
     boxscore_cache: dict = {}
 
     home_data = _build_team_starts_mp(
         home_roster, pitcher_game_map, scored_pitchers, SP_STARTS_CAP, boxscore_cache,
+        team_wrc=team_wrc, last_start_map=last_start_map,
     )
     home_data["team_name"] = sel["home_team"]
 
     away_data = _build_team_starts_mp(
         away_roster, pitcher_game_map, scored_pitchers, SP_STARTS_CAP, boxscore_cache,
+        team_wrc=team_wrc, last_start_map=last_start_map,
     )
     away_data["team_name"] = sel["away_team"]
 
