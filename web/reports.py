@@ -933,7 +933,7 @@ def _fetch_week_schedule_mp(week_start: date, week_end: date) -> list[dict]:
             "sportId":   1,
             "startDate": week_start.isoformat(),
             "endDate":   week_end.isoformat(),
-            "hydrate":   "probablePitcher,linescore",
+            "hydrate":   "probablePitcher,linescore,team",
             "gameType":  "R",
         },
         headers={"User-Agent": "Mozilla/5.0"},

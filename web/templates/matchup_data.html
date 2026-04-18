@@ -89,6 +89,7 @@
                 <tr {% if not s.counts %}class="table-danger"{% endif %}>
                   <td class="px-3 py-1">
                     {{ s.name.split()[-1] }}
+                    {% if s.days_rest is not none %}<span class="text-muted ms-1" style="font-size:.8em">({{ s.days_rest }}R)</span>{% endif %}
                     {% if s.is_live %}<span class="badge bg-warning text-dark ms-1" style="font-size:.65em">LIVE</span>{% endif %}
                     {% if not s.counts %}<span class="badge bg-danger ms-1" style="font-size:.65em">NO CREDIT</span>{% endif %}
                   </td>
@@ -96,9 +97,6 @@
                     vs {{ s.opponent }}
                     {% if s.opp_wrc is not none %}
                       <span class="{% if s.opp_wrc < 90 %}text-success{% elif s.opp_wrc > 110 %}text-danger{% else %}text-muted{% endif %}" style="font-size:.8em">({{ s.opp_wrc }})</span>
-                    {% endif %}
-                    {% if s.days_rest is not none %}
-                      <span class="text-muted" style="font-size:.8em">· {{ s.days_rest }}R</span>
                     {% endif %}
                   </td>
                   <td class="text-end pe-3 py-1 {% if not s.is_avg and not s.is_live %}fw-bold{% endif %}">
