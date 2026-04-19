@@ -3,7 +3,7 @@
 {% block content %}
 <div class="d-flex align-items-center gap-3 mb-3">
   <h4 class="mb-0">SP Matchup</h4>
-  <a href="/matchup{% if matchup_id is not none %}?matchup_id={{ matchup_id }}{% endif %}&fresh=1"
+  <a href="/matchup?{% if matchup_id is not none %}matchup_id={{ matchup_id }}&{% endif %}fresh=1"
      class="btn btn-sm btn-outline-secondary">&#8635; Refresh</a>
 </div>
 <p class="text-muted small mb-3">
