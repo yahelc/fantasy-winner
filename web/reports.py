@@ -36,7 +36,8 @@ _FG_TO_SCHED = {
     "KCR": "KC",
     "WSN": "WSH",
     "CHW": "CWS",
-    "ARI": "ARI",
+    "ARI": "AZ",   # MLB Stats API uses AZ
+    "OAK": "ATH",  # Athletics relocated; MLB Stats API uses ATH
 }
 
 
@@ -893,27 +894,33 @@ _LIVE_STATES  = frozenset({"I", "IO", "IR", "MA"})
 _DAY_NAMES    = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 
-def _fetch_team_wrc_plus(scored_hitters=None) -> dict[str, int]:
-    """Returns {MLB_Stats_API_abbr: wRC+} computed from the already-fetched hitter data."""
-    if scored_hitters is None or scored_hitters.empty:
-        return {}
+_team_wrc_cache: dict = {"data": {}, "ts": 0.0}
+
+def _fetch_team_wrc_plus() -> dict[str, int]:
+    """Returns {MLB_Stats_API_abbr: wRC+}, cached for 30 min, via pybaseball."""
+    import time as _time
+    now = _time.monotonic()
+    if _team_wrc_cache["data"] and (now - _team_wrc_cache["ts"]) < 1800:
+        return _team_wrc_cache["data"]
     try:
-        df = scored_hitters.copy()
-        if "wRC+" not in df.columns or "Team" not in df.columns or "PA" not in df.columns:
-            return {}
+        import pybaseball as _pyb
+        df = _pyb.batting_stats(SEASON, qual=1)
+        if "wRC+" not in df.columns or "Team" not in df.columns:
+            return _team_wrc_cache["data"]
         df = df[df["PA"] > 0].dropna(subset=["wRC+", "PA", "Team"])
-        # Weighted average wRC+ by team
-        result = {}
+        result: dict[str, int] = {}
         for fg_team, grp in df.groupby("Team"):
             total_pa = grp["PA"].sum()
             if total_pa == 0:
                 continue
             wrc = (grp["wRC+"] * grp["PA"]).sum() / total_pa
             mlb = _FG_TO_SCHED.get(str(fg_team), str(fg_team))
-            result[mlb.upper()] = int(round(wrc))
+            result[mlb.upper()] = int(round(float(wrc)))
+        _team_wrc_cache["data"] = result
+        _team_wrc_cache["ts"] = now
         return result
     except Exception:
-        return {}
+        return _team_wrc_cache["data"]
 
 
 def _norm_name(name: str) -> str:
@@ -1215,7 +1222,7 @@ def _build_team_starts_mp(
     }
 
 
-def get_matchup_data(league, matchup_id: int | None, scored_pitchers, scored_hitters=None) -> dict:
+def get_matchup_data(league, matchup_id: int | None, scored_pitchers) -> dict:
     from config import SP_STARTS_CAP
     from datetime import timedelta
 
@@ -1281,7 +1288,7 @@ def get_matchup_data(league, matchup_id: int | None, scored_pitchers, scored_hit
             if norm not in last_start_map or d > last_start_map[norm]:
                 last_start_map[norm] = d
 
-    team_wrc = _fetch_team_wrc_plus(scored_hitters)
+    team_wrc = _fetch_team_wrc_plus()
     boxscore_cache: dict = {}
 
     home_data = _build_team_starts_mp(
