@@ -9,6 +9,14 @@
     <a href="/percentiles?year={{ year }}&week={{ week }}&source=fa" class="btn {% if source == 'fa' %}btn-primary{% else %}btn-outline-secondary{% endif %}">Free Agents</a>
   </div>
 
+  <select class="form-select form-select-sm" style="width:185px"
+          onchange="if(this.value) window.location='/percentiles?year={{ year }}&source=team&team='+encodeURIComponent(this.value)">
+    <option value="">Other team...</option>
+    {% for t in teams %}
+    <option value="{{ t }}" {% if source == 'team' and team == t %}selected{% endif %}>{{ t }}</option>
+    {% endfor %}
+  </select>
+
   {% if source == 'roster' %}
   <div class="btn-group btn-group-sm" role="group">
     <a href="/percentiles?year={{ year }}&week=next&source=roster" class="btn {% if week == 'next' %}btn-secondary{% else %}btn-outline-secondary{% endif %}">Next Week</a>
@@ -29,14 +37,14 @@
   <div class="d-flex align-items-center gap-2">
     <label class="form-label mb-0 small text-muted">Year:</label>
     <select class="form-select form-select-sm" style="width:90px"
-            onchange="window.location='/percentiles?year='+this.value+'&week={{ week }}&source={{ source }}&pos={{ pos }}'">
+            onchange="window.location='/percentiles?year='+this.value+'&week={{ week }}&source={{ source }}&pos={{ pos }}&team={{ team }}'">
       {% for y in [2026, 2025, 2024] %}
       <option value="{{ y }}" {% if year == y %}selected{% endif %}>{{ y }}</option>
       {% endfor %}
     </select>
   </div>
 
-  <a href="/percentiles?year={{ year }}&week={{ week }}&source={{ source }}&pos={{ pos }}&fresh=1" class="btn btn-sm btn-outline-secondary">&#8635; Refresh</a>
+  <a href="/percentiles?year={{ year }}&week={{ week }}&source={{ source }}&pos={{ pos }}&team={{ team }}&fresh=1" class="btn btn-sm btn-outline-secondary">&#8635; Refresh</a>
 </div>
 <p class="text-muted small">
   Savant percentile rankings (99 = best in MLB).
@@ -44,7 +52,7 @@
   For pitchers: all columns are inverted so 99 = best.
 </p>
 
-<div hx-get="/percentiles/data?year={{ year }}&week={{ week }}&source={{ source }}&pos={{ pos }}" hx-trigger="load" hx-swap="outerHTML">
+<div hx-get="/percentiles/data?year={{ year }}&week={{ week }}&source={{ source }}&pos={{ pos }}&team={{ team }}" hx-trigger="load" hx-swap="outerHTML">
   <div class="d-flex justify-content-center p-5">
     <div class="spinner-border text-primary" role="status">
       <span class="visually-hidden">Loading...</span>

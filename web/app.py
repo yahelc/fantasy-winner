@@ -262,23 +262,33 @@ async def schedule_data(request: Request, n: int = 100):
 @app.get("/percentiles", response_class=HTMLResponse)
 async def percentiles_shell(
     request: Request, year: int = 2026, week: str = "next",
-    source: str = "roster", pos: str = "", fresh: int = 0,
+    source: str = "roster", pos: str = "", team: str = "", fresh: int = 0,
 ):
     if fresh:
         data_module.invalidate()
-        return RedirectResponse(url=f"/percentiles?year={year}&week={week}&source={source}&pos={pos}", status_code=302)
+        return RedirectResponse(
+            url=f"/percentiles?year={year}&week={week}&source={source}&pos={pos}&team={team}",
+            status_code=302,
+        )
+    league = data_module.get_league_cached()
+    teams = [t.team_name for t in league.teams]
     cache_info = data_module.get_cache_info()
     return templates.TemplateResponse(request, "percentiles.html", {
-        "year": year, "week": week, "source": source, "pos": pos, "cache_info": cache_info,
+        "year": year, "week": week, "source": source, "pos": pos,
+        "team": team, "teams": teams, "cache_info": cache_info,
     })
 
 
 @app.get("/percentiles/data", response_class=HTMLResponse)
-async def percentiles_data(request: Request, year: int = 2026, week: str = "next",
-                           source: str = "roster", pos: str = ""):
+async def percentiles_data(
+    request: Request, year: int = 2026, week: str = "next",
+    source: str = "roster", pos: str = "", team: str = "",
+):
     try:
         league = data_module.get_league_cached()
-        ctx = reports.get_percentiles_data(league, week=week, year=year, source=source, pos=pos)
+        ctx = reports.get_percentiles_data(
+            league, week=week, year=year, source=source, pos=pos, team=team,
+        )
 
         from percentiles import HITTER_COLS, PITCHER_COLS
 
@@ -286,13 +296,15 @@ async def percentiles_data(request: Request, year: int = 2026, week: str = "next
         h_display_cols = [h for _, h, _, _ in HITTER_COLS]
         p_display_cols = [h for _, h, _, _ in PITCHER_COLS]
 
-        ctx["hitters_html"] = df_to_html(
-            ctx["hitters"],
-            pct_cols=h_display_cols,
+        ctx["hitters_html"] = df_to_html(ctx["hitters"], pct_cols=h_display_cols)
+        ctx["pitchers_html"] = df_to_html(ctx["pitchers"], pct_cols=p_display_cols)
+        ctx["h_bench_html"] = (
+            df_to_html(ctx["h_bench"], pct_cols=h_display_cols)
+            if ctx.get("h_bench") is not None else None
         )
-        ctx["pitchers_html"] = df_to_html(
-            ctx["pitchers"],
-            pct_cols=p_display_cols,
+        ctx["p_bench_html"] = (
+            df_to_html(ctx["p_bench"], pct_cols=p_display_cols)
+            if ctx.get("p_bench") is not None else None
         )
         ctx["cache_info"] = data_module.get_cache_info()
         return templates.TemplateResponse(request, "percentiles_data.html", ctx)
@@ -339,6 +351,31 @@ async def compare_data(request: Request, names: str = "", debug: int = 0):
         ) if not ctx["p_rows"].empty else None
         ctx["cache_info"] = data_module.get_cache_info()
         return templates.TemplateResponse(request, "compare_data.html", ctx)
+    except Exception as e:
+        traceback.print_exc()
+        return _error_fragment(str(e))
+
+
+# ---------------------------------------------------------------------------
+# Decisions
+# ---------------------------------------------------------------------------
+
+@app.get("/decisions", response_class=HTMLResponse)
+async def decisions_shell(request: Request, fresh: int = 0):
+    if fresh:
+        data_module.invalidate()
+        return RedirectResponse(url="/decisions", status_code=302)
+    cache_info = data_module.get_cache_info()
+    return templates.TemplateResponse(request, "decisions.html", {"cache_info": cache_info})
+
+
+@app.get("/decisions/data", response_class=HTMLResponse)
+async def decisions_data(request: Request):
+    try:
+        league = data_module.get_league_cached()
+        ctx = reports.get_decisions_data(league)
+        ctx["cache_info"] = data_module.get_cache_info()
+        return templates.TemplateResponse(request, "decisions_data.html", ctx)
     except Exception as e:
         traceback.print_exc()
         return _error_fragment(str(e))

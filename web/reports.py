@@ -104,11 +104,23 @@ def get_lineup_data(league, hitters_scored, pitchers_scored, week: str = "next")
 
     slot_map     = {p.name: getattr(p, "lineupSlot", "BE") for p in roster}
     eligible_map = {p.name: _primary_slots(p.eligibleSlots) for p in roster}
+    espn_team_map = {p.name: getattr(p, "proTeam", "") for p in roster}
     roster_names = set(slot_map.keys())
 
     all_scored = pd.concat([hitters_scored, pitchers_scored], ignore_index=True)
     my_players = all_scored[all_scored["Name"].isin(roster_names)].copy()
     my_players["Slot"] = my_players["Name"].map(slot_map)
+
+    # Resolve "- - -" (FanGraphs placeholder for recently traded players) via ESPN
+    def _resolve_team(name, team):
+        if team == "- - -" or not team or (isinstance(team, float) and pd.isna(team)):
+            return espn_team_map.get(name, "")
+        return team
+
+    if "Team" in my_players.columns:
+        my_players["Team"] = my_players.apply(
+            lambda r: _resolve_team(r["Name"], r["Team"]), axis=1
+        )
 
     is_bench = my_players["Slot"].isin(_BENCH_SLOTS)
     active = my_players[~is_bench].sort_values("composite_score", ascending=False)
@@ -588,8 +600,8 @@ def get_schedule_data(league, hitters_scored, pitchers_scored, n: int = 20) -> d
 # ---------------------------------------------------------------------------
 
 def get_percentiles_data(league, week: str = "next", year: int = 2026,
-                         source: str = "roster", pos: str = "") -> dict:
-    """Returns {"hitters": df, "pitchers": df, "year": int, "week": str, "source": str, "pos": str}"""
+                         source: str = "roster", pos: str = "", team: str = "") -> dict:
+    """Returns {"hitters": df, "pitchers": df, "year": int, "week": str, "source": str, "pos": str, "team": str}"""
     from percentiles import _fetch_percentiles, _build_table, HITTER_COLS, PITCHER_COLS
 
     hitter_pct  = _fetch_percentiles("batter",  year)
@@ -608,6 +620,24 @@ def get_percentiles_data(league, week: str = "next", year: int = 2026,
                          if not (pitcher_slots & _primary_slots(p.eligibleSlots))]
         pitcher_names = [p.name for p in players
                          if pitcher_slots & _primary_slots(p.eligibleSlots)]
+    elif source == "team" and team:
+        roster = get_roster_for_day(team, league=league)
+        if not roster:
+            t = next((t for t in league.teams if team.lower() in t.team_name.lower()), None)
+            roster = t.roster if t else []
+        bench_slots = {"BE", "BN", "IL", "IL+", "NA"}
+        hitter_names  = []
+        pitcher_names = []
+        bench_hitter_names  = []
+        bench_pitcher_names = []
+        for p in roster:
+            slots = set(p.eligibleSlots or [])
+            slot  = getattr(p, "lineupSlot", "BE") or "BE"
+            is_bench = slot in bench_slots
+            if slots & pitcher_slots and "C" not in slots and "1B" not in slots:
+                (bench_pitcher_names if is_bench else pitcher_names).append(p.name)
+            else:
+                (bench_hitter_names if is_bench else hitter_names).append(p.name)
     else:
         use_next = (week == "next")
         if use_next:
@@ -631,13 +661,24 @@ def get_percentiles_data(league, week: str = "next", year: int = 2026,
     h_table = _build_table(hitter_names, hitter_pct, HITTER_COLS)
     p_table = _build_table(pitcher_names, pitcher_pct, PITCHER_COLS)
 
+    # Bench tables only populated for other-team view
+    if source == "team" and team:
+        h_bench_table = _build_table(bench_hitter_names, hitter_pct, HITTER_COLS)
+        p_bench_table = _build_table(bench_pitcher_names, pitcher_pct, PITCHER_COLS)
+    else:
+        h_bench_table = None
+        p_bench_table = None
+
     return {
-        "hitters":  h_table,
-        "pitchers": p_table,
-        "year":     year,
-        "week":     week,
-        "source":   source,
-        "pos":      pos,
+        "hitters":        h_table,
+        "pitchers":       p_table,
+        "h_bench":        h_bench_table,
+        "p_bench":        p_bench_table,
+        "year":           year,
+        "week":           week,
+        "source":         source,
+        "pos":            pos,
+        "team":           team,
     }
 
 
@@ -667,17 +708,21 @@ def _collect_actual_points(league, scoring_week: int) -> tuple[dict[str, float],
     import json as _json
     from datetime import timedelta
 
+    from config import ESPN_S2, ESPN_SWID
+
     endpoint = (
         f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/flb"
         f"/seasons/{SEASON}/segments/0/leagues/{league.league_id}"
     )
     headers = {"User-Agent": "Mozilla/5.0"}
+    cookies = {"espn_s2": ESPN_S2, "SWID": ESPN_SWID} if ESPN_S2 and ESPN_SWID else {}
     filt = {"schedule": {"filterMatchupPeriodIds": {"value": [scoring_week]}}}
 
     r = _requests.get(
         endpoint,
         params={"view": ["mMatchup", "mMatchupScore"]},
         headers={**headers, "x-fantasy-filter": _json.dumps(filt)},
+        cookies=cookies,
         timeout=20,
     )
     r.raise_for_status()
@@ -1316,3 +1361,213 @@ def get_matchup_data(league, matchup_id: int | None, scored_pitchers) -> dict:
         "away":         away_data,
         "delta":        delta,
     }
+
+
+# ---------------------------------------------------------------------------
+# 12. Decisions: evaluate past add/drop transactions
+# ---------------------------------------------------------------------------
+
+_OPENING_DAY = date(2026, 3, 27)
+
+
+def _sp_to_matchup(sp: int) -> int:
+    """Scoring period → matchup period (1-indexed, 7 days each)."""
+    return (sp - 1) // 7 + 1
+
+
+def _matchup_date_range(mp: int) -> tuple:
+    from datetime import timedelta
+    start = _OPENING_DAY + timedelta(days=(mp - 1) * 7)
+    end   = start + timedelta(days=6)
+    return start, end
+
+
+def _mlb_week_pts(week_start, week_end) -> dict:
+    """
+    Fetch actual batting + pitching stats from MLB Stats API for a date range,
+    compute fantasy points, and return {player_name: pts}.
+    Names are accent-stripped to match ESPN transaction names.
+    QS/NH/PG are unavailable from this API and are excluded.
+    """
+    import unicodedata
+    import requests as _req
+    from config import BATTING_WEIGHTS, PITCHING_WEIGHTS
+
+    def _strip(s):
+        return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+
+    _MLB = "https://statsapi.mlb.com/api/v1/stats"
+    start_str = week_start.strftime("%Y-%m-%d")
+    end_str   = week_end.strftime("%Y-%m-%d")
+    season    = week_start.year
+    pts: dict[str, float] = {}
+
+    # Batting
+    try:
+        r = _req.get(_MLB, params={
+            "stats": "byDateRange", "group": "hitting", "season": season,
+            "startDate": start_str, "endDate": end_str, "playerPool": "all", "limit": 2000,
+        }, timeout=20)
+        r.raise_for_status()
+        for s in r.json().get("stats", [{}])[0].get("splits", []):
+            stat = s.get("stat", {})
+            name = _strip(s.get("player", {}).get("fullName", ""))
+            if not name:
+                continue
+            h   = int(stat.get("hits", 0) or 0)
+            bb2 = int(stat.get("doubles", 0) or 0)
+            b3  = int(stat.get("triples", 0) or 0)
+            hr  = int(stat.get("homeRuns", 0) or 0)
+            tb  = h + bb2 + 2 * b3 + 3 * hr
+            p = (
+                tb                                      * BATTING_WEIGHTS.get("TB", 0) +
+                int(stat.get("runs", 0) or 0)           * BATTING_WEIGHTS.get("R",  0) +
+                int(stat.get("rbi", 0) or 0)            * BATTING_WEIGHTS.get("RBI",0) +
+                int(stat.get("baseOnBalls", 0) or 0)    * BATTING_WEIGHTS.get("BB", 0) +
+                int(stat.get("strikeOuts", 0) or 0)     * BATTING_WEIGHTS.get("K",  0) +
+                int(stat.get("stolenBases", 0) or 0)    * BATTING_WEIGHTS.get("SB", 0)
+            )
+            if name in pts:
+                pts[name] = max(pts[name], round(p, 1))  # keep higher if duped
+            else:
+                pts[name] = round(p, 1)
+    except Exception:
+        pass
+
+    # Pitching
+    try:
+        r = _req.get(_MLB, params={
+            "stats": "byDateRange", "group": "pitching", "season": season,
+            "startDate": start_str, "endDate": end_str, "playerPool": "all", "limit": 2000,
+        }, timeout=20)
+        r.raise_for_status()
+        for s in r.json().get("stats", [{}])[0].get("splits", []):
+            stat = s.get("stat", {})
+            name = _strip(s.get("player", {}).get("fullName", ""))
+            if not name or name in pts:  # skip if already counted as batter
+                continue
+            ip  = float(stat.get("inningsPitched", 0) or 0)
+            p = (
+                ip                                          * PITCHING_WEIGHTS.get("IP", 0) +
+                int(stat.get("strikeOuts", 0) or 0)         * PITCHING_WEIGHTS.get("K",  0) +
+                int(stat.get("hits", 0) or 0)               * PITCHING_WEIGHTS.get("H",  0) +
+                int(stat.get("earnedRuns", 0) or 0)         * PITCHING_WEIGHTS.get("ER", 0) +
+                int(stat.get("baseOnBalls", 0) or 0)        * PITCHING_WEIGHTS.get("BB", 0) +
+                int(stat.get("wins", 0) or 0)               * PITCHING_WEIGHTS.get("W",  0) +
+                int(stat.get("losses", 0) or 0)             * PITCHING_WEIGHTS.get("L",  0) +
+                int(stat.get("saves", 0) or 0)              * PITCHING_WEIGHTS.get("SV", 0)
+            )
+            pts[name] = round(p, 1)
+    except Exception:
+        pass
+
+    return pts
+
+
+def get_decisions_data(league) -> dict:
+    """
+    Returns {"decisions": list, "current_mp": int} where each decision is:
+      {
+        "added": str, "dropped": str|None,
+        "date": date, "txn_sp": int, "effective_mp": int,
+        "weeks": [{"mp": int, "start": date, "end": date,
+                   "added_pts": float|None, "dropped_pts": float|None,
+                   "delta": float|None}],
+        "net": float,
+      }
+
+    Uses FanGraphs date-range stats for all player lookups (works for any
+    historical week; QS/NH/PG are excluded as noted in _compute_fa_points).
+    """
+    from config import MY_TEAM_NAME, ESPN_S2, ESPN_SWID
+    from datetime import datetime, timedelta
+
+    if not ESPN_S2 or not ESPN_SWID:
+        return {"decisions": [], "current_mp": 1, "error": "ESPN credentials not configured."}
+
+    acts = league.recent_activity(size=500)
+    current_mp = getattr(league, "currentMatchupPeriod", 1)
+
+    # Parse my add/drop pairs
+    raw_decisions = []
+    for a in acts:
+        teams_in_act = {str(item[0]) for item in a.actions}
+        if not any(MY_TEAM_NAME.lower() in t.lower() for t in teams_in_act):
+            continue
+        adds  = [item[2] for item in a.actions
+                 if "ADDED" in item[1] and MY_TEAM_NAME.lower() in str(item[0]).lower()]
+        drops = [item[2] for item in a.actions
+                 if "DROPPED" in item[1] and MY_TEAM_NAME.lower() in str(item[0]).lower()]
+        if not adds:
+            continue
+
+        txn_date = datetime.fromtimestamp(a.date / 1000).date()
+        sp = max(1, (txn_date - _OPENING_DAY).days + 1)
+
+        for added in adds:
+            dropped = drops[0] if drops else None
+            raw_decisions.append({"added": added, "dropped": dropped, "date": txn_date, "txn_sp": sp})
+
+    # Determine effective matchup period for each decision by checking
+    # whether the added player appeared on the Tuesday roster that week.
+    decisions = []
+    for d in raw_decisions:
+        mp_txn = _sp_to_matchup(d["txn_sp"])
+
+        effective_mp = mp_txn + 1  # default: takes effect next week
+        for mp_candidate in (mp_txn, mp_txn + 1):
+            if mp_candidate > current_mp:
+                break
+            start, _ = _matchup_date_range(mp_candidate)
+            days_to_tue = (1 - start.weekday()) % 7
+            tuesday = start + timedelta(days=days_to_tue)
+            roster = get_roster_for_day(MY_TEAM_NAME, league=league, target_date=tuesday)
+            if d["added"] in {p.name for p in roster}:
+                effective_mp = mp_candidate
+                break
+
+        # Collect per-week points for completed weeks using MLB Stats API.
+        # ESPN's rosterForMatchupPeriod is only available for active/recent matchups.
+        weeks = []
+        mlb_cache: dict = {}  # mp -> pts_map
+
+        for mp in range(effective_mp, current_mp):
+            if mp not in mlb_cache:
+                ws, we = _matchup_date_range(mp)
+                try:
+                    mlb_cache[mp] = {"pts": _mlb_week_pts(ws, we), "start": ws, "end": we}
+                except Exception:
+                    mlb_cache[mp] = {"pts": {}, "start": ws, "end": we}
+
+            c = mlb_cache[mp]
+            ws, we = c["start"], c["end"]
+
+            all_pts     = c["pts"]
+            added_pts   = all_pts.get(d["added"])
+            dropped_pts = all_pts.get(d["dropped"]) if d["dropped"] else None
+
+            delta = (round(added_pts - dropped_pts, 1)
+                     if added_pts is not None and dropped_pts is not None else None)
+
+            weeks.append({
+                "mp":          mp,
+                "start":       ws,
+                "end":         we,
+                "added_pts":   round(added_pts,   1) if added_pts   is not None else None,
+                "dropped_pts": round(dropped_pts, 1) if dropped_pts is not None else None,
+                "delta":       delta,
+            })
+
+        net          = round(sum(w["delta"]       for w in weeks if w["delta"]       is not None), 1)
+        total_added  = round(sum(w["added_pts"]   for w in weeks if w["added_pts"]   is not None), 1)
+        total_dropped= round(sum(w["dropped_pts"] for w in weeks if w["dropped_pts"] is not None), 1)
+        decisions.append({
+            **d,
+            "effective_mp":  effective_mp,
+            "weeks":         weeks,
+            "net":           net,
+            "total_added":   total_added,
+            "total_dropped": total_dropped,
+        })
+
+    return {"decisions": decisions, "current_mp": current_mp}

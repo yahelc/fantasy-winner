@@ -7,6 +7,12 @@ LEAGUE_ID = 1056949816
 SEASON = 2026
 MY_TEAM_NAME = "Onderdonk"  # partial match is fine
 
+# ESPN auth cookies — required for transaction history
+# Set via environment variables: ESPN_S2 and ESPN_SWID
+import os
+ESPN_S2   = os.environ.get("ESPN_S2", "")
+ESPN_SWID = os.environ.get("ESPN_SWID", "")
+
 # Fantasy points per stat event
 BATTING_WEIGHTS = {
     "R":  1,

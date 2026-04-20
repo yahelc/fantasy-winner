@@ -35,10 +35,10 @@ body {
 }
 /* MINE rows in upgrade-pos view */
 .mine-row td {
-  background-color: #e8f4fd !important;
+  background-color: #e8f4fd;
 }
 .mine-row td:first-child {
-  background-color: #d0eaf8 !important;
+  background-color: #d0eaf8;
 }
 
 /* Header tooltips */

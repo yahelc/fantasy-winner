@@ -1,0 +1,112 @@
+<div>
+{% if error %}
+  <div class="alert alert-warning">{{ error }}</div>
+{% elif not decisions %}
+  <p class="text-muted">No transactions found.</p>
+{% else %}
+
+<style>
+.decision-card { border: 1px solid #dee2e6; border-radius: 6px; margin-bottom: 1.25rem; overflow: hidden; }
+.decision-header { padding: 0.6rem 1rem; background: #f8f9fa; border-bottom: 1px solid #dee2e6; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.decision-header .move { font-weight: 600; font-size: 0.95rem; }
+.decision-header .meta { font-size: 0.8rem; color: #6c757d; }
+.decision-header .net-badge { margin-left: auto; font-size: 0.85rem; font-weight: 600; padding: 2px 10px; border-radius: 12px; }
+.net-pos  { background: #d1e7dd; color: #0a3622; }
+.net-neg  { background: #f8d7da; color: #58151c; }
+.net-zero { background: #e9ecef; color: #495057; }
+.decision-body { padding: 0.75rem 1rem; }
+.week-table { width: 100%; font-size: 0.85rem; border-collapse: collapse; }
+.week-table th { font-weight: 600; color: #6c757d; padding: 3px 8px; text-align: right; border-bottom: 1px solid #dee2e6; }
+.week-table th:first-child { text-align: left; }
+.week-table td { padding: 4px 8px; text-align: right; border-bottom: 1px solid #f0f0f0; }
+.week-table td:first-child { text-align: left; color: #6c757d; }
+.week-table tr:last-child td { border-bottom: none; }
+.delta-pos  { color: #198754; font-weight: 600; }
+.delta-neg  { color: #dc3545; font-weight: 600; }
+.delta-zero { color: #6c757d; }
+.pending-row { color: #adb5bd; font-style: italic; }
+</style>
+
+{% for d in decisions %}
+{% set has_drop = d.dropped is not none %}
+{% set net = d.net %}
+<div class="decision-card">
+  <div class="decision-header">
+    <span class="move">
+      ➕ {{ d.added }}
+      {% if has_drop %}&nbsp;&nbsp;➖ {{ d.dropped }}{% endif %}
+    </span>
+    <span class="meta">{{ d.date.strftime("%b %d") }} &middot; Week {{ d.effective_mp }} effective</span>
+    {% if d.weeks %}
+      {% if net > 0 %}
+        <span class="net-badge net-pos">+{{ net }} net pts</span>
+      {% elif net < 0 %}
+        <span class="net-badge net-neg">{{ net }} net pts</span>
+      {% else %}
+        <span class="net-badge net-zero">{{ net }} net pts</span>
+      {% endif %}
+    {% else %}
+      <span class="net-badge net-zero">pending</span>
+    {% endif %}
+  </div>
+  <div class="decision-body">
+    {% if not d.weeks %}
+      <p class="text-muted small mb-0">No completed weeks yet — check back after Week {{ d.effective_mp }} ends.</p>
+    {% else %}
+    <table class="week-table">
+      <thead>
+        <tr>
+          <th>Week</th>
+          <th>{{ d.added }}</th>
+          {% if has_drop %}<th>{{ d.dropped }}</th>{% endif %}
+          {% if has_drop %}<th>Delta</th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for w in d.weeks %}
+        <tr>
+          <td>Wk {{ w.mp }} ({{ w.start.strftime("%b %d") }}–{{ w.end.strftime("%d") }})</td>
+          <td>{{ w.added_pts if w.added_pts is not none else "—" }}</td>
+          {% if has_drop %}
+            <td>{{ w.dropped_pts if w.dropped_pts is not none else "—" }}</td>
+            <td>
+              {% if w.delta is not none %}
+                {% if w.delta > 0 %}
+                  <span class="delta-pos">+{{ w.delta }}</span>
+                {% elif w.delta < 0 %}
+                  <span class="delta-neg">{{ w.delta }}</span>
+                {% else %}
+                  <span class="delta-zero">0</span>
+                {% endif %}
+              {% else %}
+                <span class="delta-zero">—</span>
+              {% endif %}
+            </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+        {% if has_drop and d.weeks | length > 1 %}
+        <tr style="border-top: 2px solid #dee2e6; font-weight: 600;">
+          <td>Total</td>
+          <td>{{ d.total_added }}</td>
+          <td>{{ d.total_dropped }}</td>
+          <td>
+            {% if net > 0 %}
+              <span class="delta-pos">+{{ net }}</span>
+            {% elif net < 0 %}
+              <span class="delta-neg">{{ net }}</span>
+            {% else %}
+              <span class="delta-zero">0</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+
+{% endif %}
+</div>

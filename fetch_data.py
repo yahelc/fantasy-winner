@@ -298,8 +298,13 @@ def _apply_unified_decay(raw: dict, decayed: pd.DataFrame, season: int) -> pd.Da
     if season in raw and (season - 1) in raw:
         base = _blend_by_weight(base, raw[season - 1], HITTER_BLEND_COLS, "PA")
 
-    # Merge decayed rates (Name is the join key)
+    # Merge decayed rates (Name is the join key).
+    # Strip accents before merging because FanGraphs may use accented names
+    # (e.g. "Ramón") while MLB Stats API (monthly decay) strips them.
+    orig_names = base["Name"].copy()
+    base["Name"] = base["Name"].apply(_strip_accents)
     base = base.merge(decayed, on="Name", how="left")
+    base["Name"] = orig_names.values
 
     # Replace scoring rate stats with decayed versions where available
     replacements = {
