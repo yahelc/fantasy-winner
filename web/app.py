@@ -349,6 +349,29 @@ async def compare_data(request: Request, names: str = "", debug: int = 0):
             ctx["p_rows"], score_cols=score_cols, pct_fmt_cols=pct_fmt_cols,
             float_cols=float_cols, int_cols=int_cols,
         ) if not ctx["p_rows"].empty else None
+
+        # Savant percentiles for compared players
+        from percentiles import _fetch_percentiles, _build_table, HITTER_COLS, PITCHER_COLS
+        from config import SEASON as _SEASON
+        h_display_cols = [h for _, h, _, _ in HITTER_COLS]
+        p_display_cols = [h for _, h, _, _ in PITCHER_COLS]
+        try:
+            h_names = list(ctx["h_rows"]["Name"]) if not ctx["h_rows"].empty else []
+            p_names = list(ctx["p_rows"]["Name"]) if not ctx["p_rows"].empty else []
+            if h_names:
+                h_pct = _fetch_percentiles("batter", _SEASON)
+                ctx["h_pct_html"] = df_to_html(_build_table(h_names, h_pct, HITTER_COLS), pct_cols=h_display_cols)
+            else:
+                ctx["h_pct_html"] = None
+            if p_names:
+                p_pct = _fetch_percentiles("pitcher", _SEASON)
+                ctx["p_pct_html"] = df_to_html(_build_table(p_names, p_pct, PITCHER_COLS), pct_cols=p_display_cols)
+            else:
+                ctx["p_pct_html"] = None
+        except Exception:
+            ctx["h_pct_html"] = None
+            ctx["p_pct_html"] = None
+
         ctx["cache_info"] = data_module.get_cache_info()
         return templates.TemplateResponse(request, "compare_data.html", ctx)
     except Exception as e:

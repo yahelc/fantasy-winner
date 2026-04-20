@@ -13,6 +13,13 @@
     <div class="table-responsive mb-4">
       {{ h_html | safe }}
     </div>
+    {% if h_pct_html %}
+    <div class="section-header">Hitter Savant Percentiles</div>
+    <p class="text-muted small">99 = best in MLB. Chase%/Whiff%/K%: lower raw stat = higher rank shown.</p>
+    <div class="table-responsive mb-4">
+      {{ h_pct_html | safe }}
+    </div>
+    {% endif %}
     {% endif %}
 
     {% if p_html %}
@@ -20,6 +27,13 @@
     <div class="table-responsive mb-4">
       {{ p_html | safe }}
     </div>
+    {% if p_pct_html %}
+    <div class="section-header">Pitcher Savant Percentiles</div>
+    <p class="text-muted small">All columns inverted: 99 = best pitcher in MLB at that metric.</p>
+    <div class="table-responsive mb-4">
+      {{ p_pct_html | safe }}
+    </div>
+    {% endif %}
     {% endif %}
   {% endif %}
 </div>

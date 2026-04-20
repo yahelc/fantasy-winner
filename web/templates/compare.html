@@ -3,24 +3,19 @@
 {% block content %}
 <div class="d-flex align-items-center gap-3 mb-3">
   <h4 class="mb-0">Compare Players</h4>
-  <a href="/compare?fresh=1" class="btn btn-sm btn-outline-secondary">&#8635; Refresh Data</a>
+  <button type="button" class="btn btn-sm btn-outline-secondary" onclick="refreshCompare()">&#8635; Refresh Data</button>
 </div>
 
-<form class="row g-2 align-items-end mb-4"
-      hx-get="/compare/data"
-      hx-target="#compare-result"
-      hx-swap="innerHTML"
-      hx-indicator="#compare-spinner">
+<form id="compare-form" class="row g-2 align-items-end mb-4">
   <div class="col-auto">
     <label class="form-label small text-muted">Player names (comma-separated)</label>
-    <input type="text" name="names" value="{{ names }}"
+    <input type="text" id="names-input" name="names" value="{{ names }}"
            class="form-control" style="width: 420px"
            placeholder="e.g. Shohei Ohtani, Juan Soto, Tarik Skubal">
   </div>
   <div class="col-auto">
     <div class="form-check mb-2">
-      <input class="form-check-input" type="checkbox" name="debug" value="1" id="debugCheck"
-             {% if debug %}checked{% endif %}>
+      <input class="form-check-input" type="checkbox" id="debugCheck" {% if debug %}checked{% endif %}>
       <label class="form-check-label small" for="debugCheck">Debug (show scoring components)</label>
     </div>
   </div>
@@ -33,23 +28,46 @@
 </form>
 
 <div id="compare-result">
-  {% if names %}
-  <div class="d-flex justify-content-center p-4">
-    <div class="spinner-border text-primary" role="status">
-      <span class="visually-hidden">Loading...</span>
-    </div>
-  </div>
-  <script>
-    // Auto-trigger on page load if names are pre-filled
-    document.querySelector('form').dispatchEvent(new Event('submit'));
-  </script>
-  {% else %}
   <p class="text-muted">Enter player names above to compare.</p>
-  {% endif %}
 </div>
 
 <style>
 .htmx-indicator { display: none; }
 .htmx-request .htmx-indicator { display: inline; }
 </style>
+
+<script>
+function runCompare() {
+    const names = document.getElementById('names-input').value.trim();
+    if (!names) return;
+    const debug = document.getElementById('debugCheck').checked ? 1 : 0;
+    const dataUrl = '/compare/data?names=' + encodeURIComponent(names) + '&debug=' + debug;
+    const pageUrl = '/compare?names=' + encodeURIComponent(names) + '&debug=' + debug;
+    history.replaceState(null, '', pageUrl);
+    document.getElementById('compare-spinner').style.display = 'inline';
+    htmx.ajax('GET', dataUrl, {
+        target: '#compare-result',
+        swap: 'innerHTML',
+        indicator: '#compare-spinner',
+    }).then(() => {
+        document.getElementById('compare-spinner').style.display = 'none';
+    });
+}
+
+function refreshCompare() {
+    const names = document.getElementById('names-input').value.trim();
+    const debug = document.getElementById('debugCheck').checked ? 1 : 0;
+    const url = '/compare?fresh=1&names=' + encodeURIComponent(names) + '&debug=' + debug;
+    window.location = url;
+}
+
+document.getElementById('compare-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    runCompare();
+});
+
+{% if names %}
+document.addEventListener('DOMContentLoaded', runCompare);
+{% endif %}
+</script>
 {% endblock %}
