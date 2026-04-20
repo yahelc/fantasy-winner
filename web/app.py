@@ -317,6 +317,27 @@ async def percentiles_data(
 # Compare
 # ---------------------------------------------------------------------------
 
+@app.get("/compare/suggest")
+async def compare_suggest(q: str = ""):
+    if not q or len(q) < 1:
+        return []
+    q_lower = q.lower()
+    try:
+        hitters, pitchers = data_module.get_scored_data()
+        import unicodedata
+        def _strip(s):
+            return "".join(c for c in unicodedata.normalize("NFD", str(s)) if unicodedata.category(c) != "Mn")
+        names = set()
+        for df in (hitters, pitchers):
+            if "Name" in df.columns:
+                for name in df["Name"]:
+                    if q_lower in _strip(str(name)).lower() or q_lower in str(name).lower():
+                        names.add(str(name))
+        return sorted(names)[:15]
+    except Exception:
+        return []
+
+
 @app.get("/compare", response_class=HTMLResponse)
 async def compare_shell(request: Request, names: str = "", debug: int = 0, fresh: int = 0):
     if fresh:
