@@ -19,9 +19,6 @@ _SEASON_START = date(SEASON, 3, 27)   # Opening Day
 
 
 def get_league() -> League:
-    from config import ESPN_S2, ESPN_SWID
-    if ESPN_S2 and ESPN_SWID:
-        return League(league_id=LEAGUE_ID, year=SEASON, espn_s2=ESPN_S2, swid=ESPN_SWID)
     return League(league_id=LEAGUE_ID, year=SEASON)
 
 
