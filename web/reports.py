@@ -1133,6 +1133,8 @@ def _build_team_starts_mp(
     cap: int, boxscore_cache: dict,
     team_wrc: dict | None = None,
     last_start_map: dict | None = None,
+    team_week_games: dict | None = None,
+    week_end: "date | None" = None,
 ) -> dict:
     from collections import defaultdict
     from datetime import timedelta
@@ -1174,6 +1176,41 @@ def _build_team_starts_mp(
             if team_games:
                 games = team_games
 
+        # Rotation projection for SPs not yet listed as probable pitchers.
+        # MLB only announces probables ~2 days ahead; project remaining starts
+        # using last_start + 5-day rotation and the team's week schedule.
+        if not games and mlb_team and last_start_map and team_week_games and week_end:
+            last = last_start_map.get(norm)
+            if last is not None:
+                team_sched = sorted(
+                    team_week_games.get(mlb_team.upper(), []),
+                    key=lambda g: g["date"],
+                )
+                projected: list = []
+                base = last
+                for _ in range(2):   # at most 2 starts per week
+                    for rest in (5, 4, 6, 7):
+                        proj_date = base + timedelta(days=rest)
+                        if proj_date > week_end:
+                            break
+                        upcoming = [g for g in team_sched if g["date"] >= proj_date]
+                        if upcoming and upcoming[0]["date"] <= week_end:
+                            tg = upcoming[0]
+                            projected.append({
+                                "game_pk":      None,
+                                "date":         tg["date"],
+                                "status":       tg["status"],
+                                "opponent":     tg["opponent"],
+                                "is_home":      tg["is_home"],
+                                "pitcher_id":   None,
+                                "pitcher_team": mlb_team,
+                            })
+                            base = tg["date"]
+                            break
+                    else:
+                        break   # rest loop exhausted without finding a game
+                games = projected
+
         # A pitcher cannot start twice on the same date — deduplicate.
         seen_dates: set = set()
         deduped = []
@@ -1182,6 +1219,32 @@ def _build_team_starts_mp(
                 seen_dates.add(g["date"])
                 deduped.append(g)
         games = deduped
+
+        # Project a 2nd start if the pitcher's only game is early enough in the week
+        # for another rotation turn (e.g. Monday start → Saturday start).
+        if (len(games) == 1 and mlb_team and team_week_games and week_end):
+            latest = games[0]["date"]
+            team_sched = sorted(
+                team_week_games.get(mlb_team.upper(), []),
+                key=lambda g: g["date"],
+            )
+            for rest in (5, 4, 6, 7):
+                proj2 = latest + timedelta(days=rest)
+                if proj2 > week_end:
+                    break
+                upcoming = [g for g in team_sched if g["date"] >= proj2 and g["date"] <= week_end]
+                if upcoming and upcoming[0]["date"] not in seen_dates:
+                    tg = upcoming[0]
+                    games.append({
+                        "game_pk":      None,
+                        "date":         tg["date"],
+                        "status":       tg["status"],
+                        "opponent":     tg["opponent"],
+                        "is_home":      tg["is_home"],
+                        "pitcher_id":   None,
+                        "pitcher_team": mlb_team,
+                    })
+                    break
 
         avg = _sp_avg_pts(p.name, scored_pitchers)
 
@@ -1335,18 +1398,34 @@ def get_matchup_data(league, matchup_id: int | None, scored_pitchers, scored_hit
             if norm not in last_start_map or d > last_start_map[norm]:
                 last_start_map[norm] = d
 
+    # Team → all week games map for rotation projection (all games, not just announced probables)
+    team_week_games: dict[str, list] = {}
+    for g in schedule:
+        for abbr_key, opp_key, is_home in [
+            ("home_abbr", "away_abbr", True),
+            ("away_abbr", "home_abbr", False),
+        ]:
+            team_week_games.setdefault(g[abbr_key].upper(), []).append({
+                "date":     g["date"],
+                "opponent": g[opp_key],
+                "is_home":  is_home,
+                "status":   g["status"],
+            })
+
     team_wrc = _fetch_team_wrc_plus(scored_hitters)
     boxscore_cache: dict = {}
 
     home_data = _build_team_starts_mp(
         home_roster, pitcher_game_map, scored_pitchers, SP_STARTS_CAP, boxscore_cache,
         team_wrc=team_wrc, last_start_map=last_start_map,
+        team_week_games=team_week_games, week_end=week_end,
     )
     home_data["team_name"] = sel["home_team"]
 
     away_data = _build_team_starts_mp(
         away_roster, pitcher_game_map, scored_pitchers, SP_STARTS_CAP, boxscore_cache,
         team_wrc=team_wrc, last_start_map=last_start_map,
+        team_week_games=team_week_games, week_end=week_end,
     )
     away_data["team_name"] = sel["away_team"]
 
