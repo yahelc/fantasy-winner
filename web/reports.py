@@ -941,16 +941,17 @@ _DAY_NAMES    = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
 
 _team_wrc_cache: dict = {"data": {}, "ts": 0.0}
 
-def _fetch_team_wrc_plus() -> dict[str, int]:
-    """Returns {MLB_Stats_API_abbr: wRC+}, cached for 30 min, via pybaseball."""
+def _fetch_team_wrc_plus(scored_hitters=None) -> dict[str, int]:
+    """Returns {MLB_Stats_API_abbr: wRC+} from already-fetched hitter data (no HTTP call)."""
     import time as _time
     now = _time.monotonic()
     if _team_wrc_cache["data"] and (now - _team_wrc_cache["ts"]) < 1800:
         return _team_wrc_cache["data"]
+    if scored_hitters is None or scored_hitters.empty:
+        return _team_wrc_cache["data"]
     try:
-        import pybaseball as _pyb
-        df = _pyb.batting_stats(SEASON, qual=1)
-        if "wRC+" not in df.columns or "Team" not in df.columns:
+        df = scored_hitters
+        if "wRC+" not in df.columns or "Team" not in df.columns or "PA" not in df.columns:
             return _team_wrc_cache["data"]
         df = df[df["PA"] > 0].dropna(subset=["wRC+", "PA", "Team"])
         result: dict[str, int] = {}
@@ -961,8 +962,9 @@ def _fetch_team_wrc_plus() -> dict[str, int]:
             wrc = (grp["wRC+"] * grp["PA"]).sum() / total_pa
             mlb = _FG_TO_SCHED.get(str(fg_team), str(fg_team))
             result[mlb.upper()] = int(round(float(wrc)))
-        _team_wrc_cache["data"] = result
-        _team_wrc_cache["ts"] = now
+        if result:
+            _team_wrc_cache["data"] = result
+            _team_wrc_cache["ts"] = now
         return result
     except Exception:
         return _team_wrc_cache["data"]
@@ -1267,7 +1269,7 @@ def _build_team_starts_mp(
     }
 
 
-def get_matchup_data(league, matchup_id: int | None, scored_pitchers) -> dict:
+def get_matchup_data(league, matchup_id: int | None, scored_pitchers, scored_hitters=None) -> dict:
     from config import SP_STARTS_CAP
     from datetime import timedelta
 
@@ -1333,7 +1335,7 @@ def get_matchup_data(league, matchup_id: int | None, scored_pitchers) -> dict:
             if norm not in last_start_map or d > last_start_map[norm]:
                 last_start_map[norm] = d
 
-    team_wrc = _fetch_team_wrc_plus()
+    team_wrc = _fetch_team_wrc_plus(scored_hitters)
     boxscore_cache: dict = {}
 
     home_data = _build_team_starts_mp(
