@@ -43,9 +43,15 @@ def get_league_cached(fresh: bool = False):
         val, ts = _mem[key]
         if now - ts < _LEAGUE_TTL:
             return val
-    league = _get_league()
-    _mem[key] = (league, now)
-    return league
+    try:
+        league = _get_league()
+        _mem[key] = (league, now)
+        return league
+    except Exception:
+        # ESPN API intermittently returns 5xx — serve stale data rather than crash
+        if key in _mem:
+            return _mem[key][0]
+        raise
 
 
 def get_scored_data(fresh: bool = False):

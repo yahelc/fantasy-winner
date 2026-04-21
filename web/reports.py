@@ -1026,7 +1026,7 @@ def _fetch_boxscore_stats_mp(game_pk: int, pitcher_id: int, cache: dict) -> dict
             r = _req.get(
                 _MLB_BOXSCORE_URL.format(game_pk),
                 headers={"User-Agent": "Mozilla/5.0"},
-                timeout=15,
+                timeout=5,
             )
             cache[game_pk] = r.json() if r.ok else None
         except Exception:
