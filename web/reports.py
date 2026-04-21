@@ -1481,14 +1481,19 @@ def get_decisions_data(league) -> dict:
     Uses FanGraphs date-range stats for all player lookups (works for any
     historical week; QS/NH/PG are excluded as noted in _compute_fa_points).
     """
-    from config import MY_TEAM_NAME, ESPN_S2, ESPN_SWID
+    from config import MY_TEAM_NAME, ESPN_S2, ESPN_SWID, LEAGUE_ID
     from datetime import datetime, timedelta
 
     if not ESPN_S2 or not ESPN_SWID:
         return {"decisions": [], "current_mp": 1, "error": "ESPN credentials not configured."}
 
-    acts = league.recent_activity(size=500)
-    current_mp = getattr(league, "currentMatchupPeriod", 1)
+    # Create an authenticated League for transaction history (requires cookies).
+    # All other routes use the unauthenticated league object.
+    from espn_api.baseball import League as _League
+    auth_league = _League(league_id=LEAGUE_ID, year=SEASON, espn_s2=ESPN_S2, swid=ESPN_SWID)
+
+    acts = auth_league.recent_activity(size=500)
+    current_mp = getattr(auth_league, "currentMatchupPeriod", 1)
 
     # Parse my add/drop pairs
     raw_decisions = []
