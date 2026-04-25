@@ -1790,20 +1790,38 @@ def get_top_performances_data(
                     stats_list = player.get("stats", [])
 
                     if grouping == "week":
-                        stat_entry = next(
-                            (s for s in stats_list
-                             if s.get("scoringPeriodId") == 0
-                             and s.get("statSourceId") == 0),
-                            None,
+                        # Prefer the explicit week-total entry (scoringPeriodId=0, actual stats).
+                        # Fall back to summing per-day actual entries if the aggregate isn't present
+                        # (ESPN only includes scoringPeriodId=0 for recent/active matchups).
+                        actual = [s for s in stats_list if s.get("statSourceId") == 0]
+                        week_entry = next(
+                            (s for s in actual if s.get("scoringPeriodId") == 0), None
                         )
-                        if stat_entry is None:
-                            continue
-                        pts = float(stat_entry.get("appliedTotal", 0))
-                        raw = stat_entry.get("stats") or stat_entry.get("appliedStats", {})
-                        breakdown = {
-                            STATS_MAP.get(int(k), k): v
-                            for k, v in raw.items() if v != 0
-                        }
+                        if week_entry is not None:
+                            pts = float(week_entry.get("appliedTotal", 0))
+                            raw = week_entry.get("stats") or week_entry.get("appliedStats", {})
+                            breakdown = {
+                                STATS_MAP.get(int(k), k): v
+                                for k, v in raw.items() if v != 0
+                            }
+                        else:
+                            # Sum per-scoring-period entries for the week
+                            day_entries = [
+                                s for s in actual
+                                if s.get("scoringPeriodId", 0) != 0
+                                and (not all_sps or s.get("scoringPeriodId") in all_sps)
+                            ]
+                            if not day_entries:
+                                continue
+                            pts = sum(float(s.get("appliedTotal", 0)) for s in day_entries)
+                            merged: dict = {}
+                            for s in day_entries:
+                                for k, v in (s.get("stats") or {}).items():
+                                    merged[k] = merged.get(k, 0) + v
+                            breakdown = {
+                                STATS_MAP.get(int(k), k): v
+                                for k, v in merged.items() if v != 0
+                            }
                         key = (name, w)
                         if key in seen:
                             continue
@@ -1824,7 +1842,7 @@ def get_top_performances_data(
                             sp_id = s.get("scoringPeriodId", 0)
                             if sp_id == 0 or s.get("statSourceId") != 0:
                                 continue
-                            if sp_id not in all_sps:
+                            if all_sps and sp_id not in all_sps:
                                 continue
                             pts = float(s.get("appliedTotal", 0))
                             raw = s.get("stats") or s.get("appliedStats", {})
@@ -1863,5 +1881,6 @@ def get_top_performances_data(
         "teams":         all_team_names,
         "current_week":  current_week,
         "week_filter":   week,
+        "weeks_fetched": len(weeks_to_fetch),
         "n":             n,
     }
