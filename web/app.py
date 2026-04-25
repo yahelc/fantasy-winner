@@ -461,7 +461,67 @@ async def top_shell(
     })
 
 
-@app.get("/top/data", response_class=HTMLResponse)
+@app.get("/top/debug")
+async def top_debug(week: int = 0):
+    """Diagnostic: dump raw ESPN API response structure for top-performances parsing."""
+    import requests as _req, json as _json
+    from config import ESPN_S2, ESPN_SWID, SEASON
+
+    league = data_module.get_league_cached()
+    current_week = getattr(league, "currentMatchupPeriod", 1)
+    w = week or current_week
+
+    endpoint = (
+        f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/flb"
+        f"/seasons/{SEASON}/segments/0/leagues/{league.league_id}"
+    )
+    cookies = {"espn_s2": ESPN_S2, "SWID": ESPN_SWID} if ESPN_S2 and ESPN_SWID else {}
+    filt = {"schedule": {"filterMatchupPeriodIds": {"value": [w]}}}
+
+    try:
+        r = _req.get(
+            endpoint,
+            params={"view": ["mMatchup", "mMatchupScore"]},
+            headers={"User-Agent": "Mozilla/5.0", "x-fantasy-filter": _json.dumps(filt)},
+            cookies=cookies, timeout=20,
+        )
+        status = r.status_code
+        data = r.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+    schedule = data.get("schedule", [])
+    out = {"http_status": status, "week": w, "schedule_count": len(schedule), "matchups": []}
+
+    for m in schedule[:4]:  # inspect up to 4 matchups
+        info = {"matchupPeriodId": m.get("matchupPeriodId")}
+        for sk in ("home", "away"):
+            side = m.get(sk, {})
+            entries = side.get("rosterForMatchupPeriod", {}).get("entries", [])
+            sample_stats = []
+            if entries:
+                pl = entries[0].get("playerPoolEntry", {}).get("player", {}) or entries[0].get("player", {})
+                for s in pl.get("stats", [])[:6]:
+                    sample_stats.append({
+                        "scoringPeriodId": s.get("scoringPeriodId"),
+                        "statSourceId": s.get("statSourceId"),
+                        "statSplitTypeId": s.get("statSplitTypeId"),
+                        "seasonId": s.get("seasonId"),
+                        "appliedTotal": s.get("appliedTotal"),
+                    })
+            info[sk] = {
+                "teamId": side.get("teamId"),
+                "rosterForMatchupPeriod_entries": len(entries),
+                "pointsByScoringPeriod_keys": list(side.get("pointsByScoringPeriod", {}).keys())[:5],
+                "sample_player": entries[0].get("playerPoolEntry", {}).get("player", {}).get("fullName") if entries else None,
+                "sample_player_stats": sample_stats,
+            }
+        out["matchups"].append(info)
+
+    return out
+
+
+
 async def top_data(
     request: Request,
     type: str = "all",
