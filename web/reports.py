@@ -1657,3 +1657,211 @@ def get_decisions_data(league) -> dict:
         })
 
     return {"decisions": decisions, "current_mp": current_mp}
+
+
+# ---------------------------------------------------------------------------
+# 12. Top Performances leaderboard
+# ---------------------------------------------------------------------------
+
+_HITTER_SCORING_STATS = ["R", "TB", "RBI", "B_BB", "B_SO", "SB"]
+_PITCHER_SCORING_STATS = ["OUTS", "P_H", "ER", "P_BB", "K", "QS", "W", "L", "SV", "NH", "PG"]
+_STAT_SHORT = {"B_BB": "BB", "B_SO": "K", "P_H": "H", "P_BB": "BB"}
+
+
+def _fmt_perf_breakdown(breakdown: dict, player_type: str) -> str:
+    order = _HITTER_SCORING_STATS if player_type == "hitter" else _PITCHER_SCORING_STATS
+    parts = []
+    for stat in order:
+        val = breakdown.get(stat, 0)
+        if not val:
+            continue
+        label = _STAT_SHORT.get(stat, stat)
+        if stat == "OUTS":
+            outs = int(val)
+            parts.append(f"{outs // 3}.{outs % 3} IP")
+        else:
+            v = int(val) if float(val) == int(float(val)) else round(float(val), 1)
+            parts.append(f"{v} {label}")
+    return " • ".join(parts) if parts else "—"
+
+
+def get_top_performances_data(
+    league,
+    grouping: str = "week",    # "week" or "day"
+    type_filter: str = "all",  # "all", "hitter", "pitcher"
+    team_filter: str = "",     # fantasy team name substring (empty = all)
+    week: int = 0,             # 0 = all weeks; N = specific matchup period
+    n: int = 50,
+) -> dict:
+    """
+    Returns leaderboard of best single-week or single-day fantasy performances
+    for all rostered players (excluding IL).
+    """
+    import requests as _req
+    import json as _json
+    from datetime import timedelta
+    from config import ESPN_S2, ESPN_SWID
+    from espn_api.baseball.constant import STATS_MAP, PRO_TEAM_MAP
+
+    endpoint = (
+        f"https://lm-api-reads.fantasy.espn.com/apis/v3/games/flb"
+        f"/seasons/{SEASON}/segments/0/leagues/{league.league_id}"
+    )
+    headers = {"User-Agent": "Mozilla/5.0"}
+    cookies = {"espn_s2": ESPN_S2, "SWID": ESPN_SWID} if ESPN_S2 and ESPN_SWID else {}
+
+    current_week = getattr(league, "currentMatchupPeriod", 1)
+    current_sp   = league.scoringPeriodId
+    today        = date.today()
+
+    team_name_map: dict[int, str] = {t.team_id: t.team_name for t in league.teams}
+    all_team_names = sorted(team_name_map.values())
+
+    weeks_to_fetch = list(range(1, current_week + 1)) if week == 0 else [week]
+
+    _IL_SLOTS = {17, 18}  # IL, IL+
+    records: list[dict] = []
+    seen: set[tuple] = set()  # (name, period_sort) — deduplicate traded players
+
+    for w in weeks_to_fetch:
+        filt = {"schedule": {"filterMatchupPeriodIds": {"value": [w]}}}
+        try:
+            r = _req.get(
+                endpoint,
+                params={"view": ["mMatchup", "mMatchupScore"]},
+                headers={**headers, "x-fantasy-filter": _json.dumps(filt)},
+                cookies=cookies,
+                timeout=20,
+            )
+            r.raise_for_status()
+            data = r.json()
+        except Exception:
+            continue
+
+        # Derive date range for this matchup week
+        all_sps: set[int] = set()
+        for matchup in data.get("schedule", []):
+            for sk in ("home", "away"):
+                pbsp = matchup.get(sk, {}).get("pointsByScoringPeriod", {})
+                all_sps.update(int(k) for k in pbsp.keys())
+
+        sp_to_date: dict[int, date] = {
+            sp: today - timedelta(days=current_sp - sp) for sp in all_sps
+        }
+        if all_sps:
+            ws = today - timedelta(days=current_sp - min(all_sps))
+            we = today - timedelta(days=current_sp - max(all_sps))
+            week_label = f"Wk {w} ({ws.strftime('%b %-d')}–{we.strftime('%-d')})"
+        else:
+            week_label = f"Wk {w}"
+
+        for matchup in data.get("schedule", []):
+            for sk in ("home", "away"):
+                side = matchup.get(sk, {})
+                team_id = side.get("teamId")
+                fantasy_team = team_name_map.get(team_id, f"Team {team_id}")
+
+                if team_filter and team_filter.lower() not in fantasy_team.lower():
+                    continue
+
+                entries = side.get("rosterForMatchupPeriod", {}).get("entries", [])
+                for entry in entries:
+                    if entry.get("lineupSlotId") in _IL_SLOTS:
+                        continue
+
+                    player = (
+                        entry.get("playerPoolEntry", {}).get("player", {})
+                        or entry.get("player", {})
+                    )
+                    name = player.get("fullName", "")
+                    if not name:
+                        continue
+
+                    default_pos_id = player.get("defaultPositionId", 0)
+                    is_pitcher = default_pos_id in (1, 11)  # 1=SP, 11=RP
+                    player_type = "pitcher" if is_pitcher else "hitter"
+
+                    if type_filter == "hitter" and is_pitcher:
+                        continue
+                    if type_filter == "pitcher" and not is_pitcher:
+                        continue
+
+                    mlb_team = PRO_TEAM_MAP.get(player.get("proTeamId", 0), "FA")
+                    stats_list = player.get("stats", [])
+
+                    if grouping == "week":
+                        stat_entry = next(
+                            (s for s in stats_list
+                             if s.get("scoringPeriodId") == 0
+                             and s.get("statSourceId") == 0),
+                            None,
+                        )
+                        if stat_entry is None:
+                            continue
+                        pts = float(stat_entry.get("appliedTotal", 0))
+                        raw = stat_entry.get("stats") or stat_entry.get("appliedStats", {})
+                        breakdown = {
+                            STATS_MAP.get(int(k), k): v
+                            for k, v in raw.items() if v != 0
+                        }
+                        key = (name, w)
+                        if key in seen:
+                            continue
+                        seen.add(key)
+                        records.append({
+                            "name": name,
+                            "fantasy_team": fantasy_team,
+                            "mlb_team": mlb_team,
+                            "type": player_type,
+                            "period": week_label,
+                            "period_sort": w,
+                            "pts": pts,
+                            "breakdown": breakdown,
+                        })
+
+                    else:  # day
+                        for s in stats_list:
+                            sp_id = s.get("scoringPeriodId", 0)
+                            if sp_id == 0 or s.get("statSourceId") != 0:
+                                continue
+                            if sp_id not in all_sps:
+                                continue
+                            pts = float(s.get("appliedTotal", 0))
+                            raw = s.get("stats") or s.get("appliedStats", {})
+                            breakdown = {
+                                STATS_MAP.get(int(k), k): v
+                                for k, v in raw.items() if v != 0
+                            }
+                            day_d = sp_to_date.get(sp_id)
+                            day_label = day_d.strftime("%a %b %-d") if day_d else f"SP{sp_id}"
+                            key = (name, sp_id)
+                            if key in seen:
+                                continue
+                            seen.add(key)
+                            records.append({
+                                "name": name,
+                                "fantasy_team": fantasy_team,
+                                "mlb_team": mlb_team,
+                                "type": player_type,
+                                "period": day_label,
+                                "period_sort": sp_id,
+                                "pts": pts,
+                                "breakdown": breakdown,
+                            })
+
+    records.sort(key=lambda r: r["pts"], reverse=True)
+    records = records[:n]
+    for i, rec in enumerate(records):
+        rec["rank"] = i + 1
+        rec["breakdown_str"] = _fmt_perf_breakdown(rec["breakdown"], rec["type"])
+
+    return {
+        "rows":          records,
+        "grouping":      grouping,
+        "type_filter":   type_filter,
+        "team_filter":   team_filter,
+        "teams":         all_team_names,
+        "current_week":  current_week,
+        "week_filter":   week,
+        "n":             n,
+    }

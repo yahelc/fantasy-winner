@@ -426,6 +426,68 @@ async def decisions_data(request: Request):
 
 
 # ---------------------------------------------------------------------------
+# Top Performances leaderboard
+# ---------------------------------------------------------------------------
+
+@app.get("/top", response_class=HTMLResponse)
+async def top_shell(
+    request: Request,
+    type: str = "all",
+    grouping: str = "week",
+    team: str = "",
+    week: int = 0,
+    n: int = 50,
+    fresh: int = 0,
+):
+    if fresh:
+        data_module.invalidate()
+        return RedirectResponse(
+            url=f"/top?type={type}&grouping={grouping}&team={team}&week={week}&n={n}",
+            status_code=302,
+        )
+    league = data_module.get_league_cached()
+    current_week = getattr(league, "currentMatchupPeriod", 1)
+    teams = sorted(t.team_name for t in league.teams)
+    cache_info = data_module.get_cache_info()
+    return templates.TemplateResponse(request, "top.html", {
+        "type": type,
+        "grouping": grouping,
+        "team": team,
+        "week": week,
+        "n": n,
+        "teams": teams,
+        "current_week": current_week,
+        "cache_info": cache_info,
+    })
+
+
+@app.get("/top/data", response_class=HTMLResponse)
+async def top_data(
+    request: Request,
+    type: str = "all",
+    grouping: str = "week",
+    team: str = "",
+    week: int = 0,
+    n: int = 50,
+):
+    try:
+        league = data_module.get_league_cached()
+        ctx = reports.get_top_performances_data(
+            league,
+            grouping=grouping,
+            type_filter=type,
+            team_filter=team,
+            week=week,
+            n=n,
+        )
+        ctx["cache_info"] = data_module.get_cache_info()
+        return templates.TemplateResponse(request, "top_data.html", ctx)
+    except Exception as e:
+        traceback.print_exc()
+        return _error_fragment(str(e))
+
+
+# ---------------------------------------------------------------------------
 # Simulate
 # ---------------------------------------------------------------------------
 
